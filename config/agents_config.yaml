@@ -1,0 +1,73 @@
+# Configuración de Agentes Individuales
+
+agents:
+  requirements:
+    enabled: true
+    priority: 10
+    capabilities:
+      - gather_requirements
+      - analyze_requirements
+      - generate_srs
+      - create_use_cases
+      - validate_requirements
+
+  design:
+    enabled: true
+    priority: 9
+    capabilities:
+      - create_architecture
+      - design_components
+      - select_patterns
+      - validate_design
+      - generate_diagrams
+
+  code_backend:
+    enabled: true
+    priority: 8
+    capabilities:
+      - generate_code
+      - refactor_code
+      - apply_standards
+      - generate_documentation
+      - manage_dependencies
+
+  code_frontend:
+    enabled: true
+    priority: 8
+    capabilities:
+      - generate_components
+      - generate_pages
+      - generate_hooks
+      - generate_services
+      - generate_styles
+      - setup_project
+
+  tests:
+    enabled: true
+    priority: 7
+    capabilities:
+      - generate_tests
+      - execute_tests
+      - analyze_coverage
+      - generate_reports
+      - mock_dependencies
+
+  deploy:
+    enabled: true
+    priority: 6
+    capabilities:
+      - create_pipeline
+      - configure_deployment
+      - execute_deployment
+      - rollback
+      - manage_secrets
+
+  maintenance:
+    enabled: true
+    priority: 5
+    capabilities:
+      - monitor_health
+      - detect_issues
+      - analyze_logs
+      - generate_reports
+      - suggest_improvements

@@ -1,0 +1,43 @@
+# Configuración de Agentes
+
+# Configuración global del sistema
+app:
+  name: "SDLAS"
+  version: "0.1.0"
+  debug: false
+
+# Configuración de LLM
+llm:
+  provider: "openai"
+  model: "gpt-4"
+  temperature: 0.7
+  max_tokens: 2000
+  # api_key: configurado via variable de entorno
+
+# Configuración de agentes
+agents:
+  max_concurrent_tasks: 5
+  task_timeout: 300
+  autonomy_level: 2
+
+# Configuración de message broker
+message_broker:
+  max_queue_size: 100
+  message_ttl: 3600
+
+# Configuración de logging
+logging:
+  level: "INFO"
+  format: "json"
+  # log_file: "/var/log/sdlas.log"
+
+# Configuración de métricas
+metrics:
+  enabled: true
+  retention_days: 30
+
+# Configuración de despliegue
+deploy:
+  default_environment: "dev"
+  # docker_registry: "registry.example.com"
+  kubernetes_enabled: false
