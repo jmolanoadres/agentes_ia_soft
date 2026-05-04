@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 import uuid
 
 from src.agents.base.base_agent import BaseAgent, AgentState, Task, TaskResult, TaskStatus, Capability
-from src.agents.base.decision_engine import DecisionEngine, DecisionOption, DecisionType, DecisionConfidence
+from src.agents.base.decision_engine import DecisionEngine, DecisionOption, DecisionType, DecisionConfidence, CostBenefitRule
 
 logger = logging.getLogger(__name__)
 
