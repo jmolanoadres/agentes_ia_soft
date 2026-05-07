@@ -89,8 +89,7 @@ class ApprovalGate:
         se puede auto-aprobar.
         """
         issues = []
-        ambiguous = srs.ambiguity_score
-        if ambiguous > 0.3:
+        if srs.ambiguity_score > 0.3:
             issues.append(
                 f"Score de ambigüedad elevado: {ambiguous:.2f}"
             )
