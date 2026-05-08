@@ -19,7 +19,7 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from .auto_refinement_models import SkillRecord, RefinementAction
+from auto_refinement_models import SkillRecord, RefinementAction
 
 logger = logging.getLogger(__name__)
 
