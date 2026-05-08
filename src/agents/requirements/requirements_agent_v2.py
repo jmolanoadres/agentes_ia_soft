@@ -9,8 +9,6 @@ Este agente se alinea con las interfaces del repo:
 - src.agents.base.base_agent.BaseAgent / Task / TaskResult / Capability
 - src.agents.base.decision_engine.DecisionEngine
 
-Nota:
-- Se permite .get() ÚNICAMENTE sobre diccionarios de entrada (input_data) antes de normalizar.
 """
 
 from __future__ import annotations
@@ -25,34 +23,19 @@ from typing import Any, Dict, List, Optional, Iterable, Mapping, Tuple, Union
 from src.agents.base.base_agent import BaseAgent, AgentState, Task, TaskResult, TaskStatus, Capability
 from src.agents.base.decision_engine import DecisionEngine, DecisionType, CostBenefitRule, DecisionOption
 
-# Modelos compartidos
-try:
-    # Ruta recomendada
-    from requirements_models import (
-        Requirement, UseCase, SoftwareRequirementsSpec,
-        RequirementChange, SRSVersion,
-        TraceabilityEntry, TraceabilityMatrix,
-        ApprovalRequest, ApprovalResponse,
-        DesignHandoffPackage,
-        AmbiguityReport, AmbiguityFlag,
-        RequirementType, RequirementStatus,
-        PriorityLevel, ComplexityLevel,
-        ApprovalStatus,
-    )
-except Exception:
-    # Fallback: mismo directorio
-    from requirements_models import (
-        Requirement, UseCase, SoftwareRequirementsSpec,
-        RequirementChange, SRSVersion,
-        TraceabilityEntry, TraceabilityMatrix,
-        ApprovalRequest, ApprovalResponse,
-        DesignHandoffPackage,
-        AmbiguityReport, AmbiguityFlag,
-        RequirementType, RequirementStatus,
-        PriorityLevel, ComplexityLevel,
-        ApprovalStatus,
-    )
+from requirements_models import (
+    Requirement, UseCase, SoftwareRequirementsSpec,
+    RequirementChange, SRSVersion,
+    TraceabilityEntry, TraceabilityMatrix,
+    ApprovalRequest, ApprovalResponse,
+    DesignHandoffPackage,
+    AmbiguityReport, AmbiguityFlag,
+    RequirementType, RequirementStatus,
+    PriorityLevel, ComplexityLevel,
+    ApprovalStatus,
+)
 
+from requirements_assumptions import AssumptionReviewSession
 
 logger = logging.getLogger(__name__)
 
@@ -86,30 +69,17 @@ def _coerce_enum(enum_cls, value, default):
 
 
 def normalize_requirements(items: Any) -> List[Requirement]:
-    """Estandariza una colección de requisitos.
+    """Normaliza requisitos (dicts u objetos) a List[Requirement]."""
+    from collections.abc import Mapping, Iterable
 
-    Acepta:
-    - List[Requirement]
-    - List[dict]
-    - dict
-    - Requirement
-
-    Devuelve: List[Requirement]
-
-    Regla:
-    - .get() sólo se usa aquí cuando el item es dict.
-    """
     if items is None:
         return []
-
-    # Un solo elemento
     if isinstance(items, Requirement):
         return [items]
     if isinstance(items, Mapping):
         items = [items]
-
     if not isinstance(items, Iterable) or isinstance(items, (str, bytes)):
-        raise TypeError(f"normalize_requirements() espera iterable, recibió: {type(items)}")
+        raise TypeError(f"normalize_requirements espera iterable, recibió {type(items)}")
 
     out: List[Requirement] = []
     for it in items:
@@ -122,20 +92,18 @@ def normalize_requirements(items: Any) -> List[Requirement]:
                 id=rid,
                 title=it.get('title', ''),
                 description=it.get('description', ''),
-                type=_coerce_enum(RequirementType, it.get('type', 'functional'), RequirementType.FUNCTIONAL),
-                priority=_coerce_enum(PriorityLevel, it.get('priority', 'medium'), PriorityLevel.MEDIUM),
+                type=RequirementType(it.get('type', 'functional')),
+                priority=PriorityLevel(it.get('priority', 'medium')),
                 source=it.get('source', 'user'),
                 acceptance_criteria=list(it.get('acceptance_criteria', []) or []),
                 dependencies=list(it.get('dependencies', []) or []),
-                status=_coerce_enum(RequirementStatus, it.get('status', 'pending'), RequirementStatus.PENDING),
+                status=RequirementStatus(it.get('status', 'pending')),
                 ambiguity_score=float(it.get('ambiguity_score', 0.0) or 0.0),
-                complexity_level=_coerce_enum(ComplexityLevel, it.get('complexity_level', 'medium'), ComplexityLevel.MEDIUM),
+                complexity_level=ComplexityLevel(it.get('complexity_level', 'medium')),
             ))
             continue
         raise TypeError(f"Tipo de requisito no soportado: {type(it)}")
-
     return out
-
 
 # -------------------------------------------------------------------------
 # Agente v2
