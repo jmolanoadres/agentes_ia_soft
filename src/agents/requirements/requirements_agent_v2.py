@@ -1,9 +1,5 @@
 
-"""SDLAS — Requirements Agent v2 (corregido)
-
-Cambios clave:
-- Eliminados accesos .get() indebidos sobre objetos dataclass (Requirement, UseCase, SRS, etc.).
-- Añadida función normalize_requirements() para estandarizar inputs (dicts u objetos).
+"""SDLAS — Requirements Agent v2 
 
 Este agente se alinea con las interfaces del repo:
 - src.agents.base.base_agent.BaseAgent / Task / TaskResult / Capability
@@ -32,7 +28,7 @@ from requirements_models import (
     AmbiguityReport, AmbiguityFlag,
     RequirementType, RequirementStatus,
     PriorityLevel, ComplexityLevel,
-    ApprovalStatus,
+    ApprovalStatus, SRSVersion,
 )
 
 from requirements_assumptions import AssumptionReviewSession
@@ -40,33 +36,7 @@ from requirements_assumptions import AssumptionReviewSession
 logger = logging.getLogger(__name__)
 
 
-# -------------------------------------------------------------------------
-# Normalización de inputs
-# -------------------------------------------------------------------------
-
-def _coerce_enum(enum_cls, value, default):
-    """Convierte strings/Enum a enum_cls, con fallback seguro."""
-    if value is None:
-        return default
-    try:
-        # ya es enum
-        if isinstance(value, enum_cls):
-            return value
-        # valor str
-        if isinstance(value, str):
-            v = value.strip().lower()
-            # buscar por value
-            for e in enum_cls:
-                if str(getattr(e, 'value', '')).lower() == v:
-                    return e
-                # también soporta name
-                if str(getattr(e, 'name', '')).lower() == v:
-                    return e
-        # intentar construir
-        return enum_cls(value)
-    except Exception:
-        return default
-
+# ------------------------- Normalización -------------------------
 
 def normalize_requirements(items: Any) -> List[Requirement]:
     """Normaliza requisitos (dicts u objetos) a List[Requirement]."""
@@ -110,13 +80,13 @@ def normalize_requirements(items: Any) -> List[Requirement]:
 # -------------------------------------------------------------------------
 
 class RequirementsAgentV2(BaseAgent):
-    """Agente de Requisitos v2 sin .get() indebidos."""
+    """Agente de requisitos con revisión de supuestos interactiva."""
 
     def __init__(self) -> None:
         super().__init__(
             agent_id='requirements',
             name='Requirements Agent V2',
-            description='Agente de requisitos con normalización y auto-refinamiento',
+            description='Agente de requisitos con Requisitos + revisión de supuestos + SRS + normalización y auto-refinamiento',
         )
         self._decision_engine = DecisionEngine()
         self._current_srs: Optional[SoftwareRequirementsSpec] = None
@@ -124,12 +94,17 @@ class RequirementsAgentV2(BaseAgent):
 
         # Motor simple de refinamiento (mínimo, sin dependencias)
         self._skill_stats: Dict[str, Dict[str, Any]] = {}
+        # Sesiones de revisión de supuestos (por session_id)
+        self._assumption_sessions: Dict[str, AssumptionReviewSession] = {}
 
         self._register_capabilities()
 
     def _register_capabilities(self) -> None:
         caps: List[Tuple[str, str]] = [
             ('gather_requirements', 'Recopilar requisitos'),
+            ('validate_assumptions', 'Listar supuestos asumidos'),
+            ('assumptions_select', 'Seleccionar supuestos a redefinir'),
+            ('assumptions_answer', 'Responder redefinición de supuesto'),
             ('analyze_requirements', 'Analizar requisitos'),
             ('validate_requirements', 'Validar requisitos'),
             ('generate_srs', 'Generar SRS'),
@@ -178,6 +153,9 @@ class RequirementsAgentV2(BaseAgent):
     def _get_handler(self, task_type: str):
         return {
             'gather_requirements': self._gather_requirements,
+            'validate_assumptions': self._validate_assumptions,
+            'assumptions_select': self._assumptions_select,
+            'assumptions_answer': self._assumptions_answer,
             'analyze_requirements': self._analyze_requirements,
             'validate_requirements': self._validate_requirements,
             'generate_srs': self._generate_srs,
@@ -198,45 +176,80 @@ class RequirementsAgentV2(BaseAgent):
     # -------------------- Capabilities --------------------
 
     async def _gather_requirements(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        # input_data es dict -> .get permitido
-        text = input_data.get('project_description', '')
-        source = input_data.get('source', 'user')
-
-        # heurística simple de extracción
-        parts = [p.strip() for p in re.split(r"|\.|;", text) if p.strip()]
-        if not parts:
-            parts = [
-                'El sistema debe permitir autenticación de usuarios',
-                'El sistema debe permitir operaciones CRUD',
-                'El sistema debe responder en menos de 2 segundos',
-            ]
-
-        reqs: List[Requirement] = []
-        for p in parts[:25]:
-            rtype = RequirementType.NON_FUNCTIONAL if any(k in p.lower() for k in ['segundo', 'latencia', 'p95', 'rendimiento', 'disponibilidad']) else RequirementType.FUNCTIONAL
-            prio = PriorityLevel.HIGH if 'debe' in p.lower() else PriorityLevel.MEDIUM
-            reqs.append(Requirement(
-                id=f"REQ-{uuid.uuid4().hex[:8].upper()}",
-                title=p[:60] + ('…' if len(p) > 60 else ''),
-                description=p,
-                type=rtype,
-                priority=prio,
-                source=source,
-                acceptance_criteria=[
-                    f"DADO contexto válido CUANDO se ejecuta '{p[:40]}' ENTONCES el sistema responde correctamente",
-                    "DADO entrada inválida CUANDO se ejecuta la operación ENTONCES el sistema retorna error controlado",
-                ],
-                dependencies=[],
-                status=RequirementStatus.PENDING,
-                ambiguity_score=0.0,
-                complexity_level=ComplexityLevel.MEDIUM,
-            ))
-
+        # Implementación base (placeholder): retorna requisitos normalizados
+        reqs = normalize_requirements(input_data.get('requirements', []))
         return {
             'requirements': [self._req_to_dict(r) for r in reqs],
             'count': len(reqs),
-            'project_description': text,
         }
+
+    def _collect_assumptions(self, input_data: Dict[str, Any], requirements: List[Requirement]) -> List[str]:
+        """Construye lista de supuestos asumidos por el agente.
+
+        Regla:
+        - Si input_data trae 'assumptions', se respetan.
+        - Si no, se generan supuestos por defecto que el agente suele asumir.
+        - Además, añade supuestos derivados de requisitos (p.ej. si hay performance).
+        """
+        raw = input_data.get('assumptions')
+        assumptions: List[str] = []
+        if isinstance(raw, list):
+            assumptions.extend([str(x).strip() for x in raw if str(x).strip()])
+        elif isinstance(raw, str) and raw.strip():
+            assumptions.append(raw.strip())
+
+        if not assumptions:
+            assumptions = [
+                "Existe disponibilidad de usuarios/stakeholders para validar requisitos.",
+                "Se tendrá acceso a los sistemas/servicios actuales necesarios para integración.",
+                "El entorno objetivo contará con conectividad de red estable.",
+                "Se dispondrá de credenciales y permisos para pruebas en ambientes no productivos.",
+                "Las reglas de negocio clave serán provistas por el usuario durante el levantamiento.",
+            ]
+
+        # Derivar supuestos según requisitos
+        for r in requirements:
+            desc = (r.description or "").lower()
+            if any(k in desc for k in ("segundo", "latencia", "p95", "rendimiento", "500ms")):
+                assumptions.append("Se dispone de métricas/criterios de rendimiento cuantificables (p.ej. p95) para aceptación.")
+                break
+
+        # Unificar sin duplicados
+        seen = set()
+        uniq = []
+        for a in assumptions:
+            if a not in seen:
+                uniq.append(a)
+                seen.add(a)
+        return uniq
+
+    async def _validate_assumptions(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Crea sesión y lista supuestos."""
+        reqs = normalize_requirements(input_data.get('requirements', []))
+        assumptions = self._collect_assumptions(input_data, reqs)
+        session = AssumptionReviewSession(assumptions)
+        self._assumption_sessions[session.session_id] = session
+        payload = session.start()
+        # agregar recordatorio final
+        payload['next_step'] = "Responde con los números que NO te gustan (o 0 si todos están bien)."
+        return payload
+
+    async def _assumptions_select(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        session_id = str(input_data.get('session_id', '')).strip()
+        selection = str(input_data.get('selection', '')).strip()
+        if not session_id or session_id not in self._assumption_sessions:
+            raise ValueError('session_id inválido o sesión no encontrada')
+        session = self._assumption_sessions[session_id]
+        return session.apply_selection(selection)
+
+    async def _assumptions_answer(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        session_id = str(input_data.get('session_id', '')).strip()
+        answer = str(input_data.get('answer', '')).strip()
+        if not session_id or session_id not in self._assumption_sessions:
+            raise ValueError('session_id inválido o sesión no encontrada')
+        session = self._assumption_sessions[session_id]
+        return session.answer_current(answer)
+
 
     async def _analyze_requirements(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         requirements = normalize_requirements(input_data.get('requirements', []))
@@ -282,9 +295,27 @@ class RequirementsAgentV2(BaseAgent):
         }
 
     async def _generate_srs(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Genera SRS SOLO cuando la sesión de supuestos está completa (si existe)."""
         project_name = input_data.get('project_name', 'Nuevo Proyecto')
         requirements = normalize_requirements(input_data.get('requirements', []))
 
+        session_id = str(input_data.get('assumptions_session_id', '')).strip()
+        assumptions: List[str] = []
+        if session_id:
+            session = self._assumption_sessions.get(session_id)
+            if session and not session.completed:
+                return {
+                    'error': 'Aún no se han confirmado los supuestos.',
+                    'message': 'Completa primero la revisión de supuestos. Luego estaré listo para crear la especificación.',
+                    'session_id': session_id,
+                }
+            if session:
+                # extraer supuestos finales (sin el ítem "Otra" vacío)
+                for item in session.items:
+                    if item.text.lower().startswith('otra') and not item.user_definition:
+                        continue
+                    assumptions.append(item.text)
+        
         srs = SoftwareRequirementsSpec(
             id=f"SRS-{uuid.uuid4().hex[:8].upper()}",
             project_name=project_name,
@@ -292,13 +323,22 @@ class RequirementsAgentV2(BaseAgent):
             requirements=requirements,
             use_cases=[],
             glossary={'API': 'Application Programming Interface', 'CRUD': 'Create, Read, Update, Delete', 'SRS': 'Software Requirements Specification'},
-            assumptions=['Recursos suficientes para desarrollo'],
-            constraints=['Presupuesto limitado', 'Timeline de 3 meses'],
+            assumptions=assumptions,
+            constraints=list(input_data.get('constraints', []) or []),
             approval_status=ApprovalStatus.PENDING,
         )
+
         self._current_srs = srs
         self._srs_store[srs.id] = srs
-        return {'srs_id': srs.id, 'project_name': srs.project_name, 'version': srs.current_version.version, 'requirements_count': len(srs.requirements)}
+
+        return {
+            'message': 'SRS generado. (En flujo real se solicitaría aprobación antes del handoff a diseño).',
+            'srs_id': srs.id,
+            'project_name': srs.project_name,
+            'version': srs.current_version.version,
+            'requirements_count': len(srs.requirements),
+            'assumptions': assumptions,
+        }
 
     async def _create_use_cases(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         # Normalizar: dentro, usar atributos
@@ -347,7 +387,7 @@ class RequirementsAgentV2(BaseAgent):
 
     @staticmethod
     def _req_to_dict(r: Requirement) -> Dict[str, Any]:
-        # acceso por atributos, no .get
+        
         return {
             'id': r.id,
             'title': r.title,
