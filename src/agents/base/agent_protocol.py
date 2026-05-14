@@ -135,3 +135,7 @@ class Protocol:
             if m.expires_at is None or m.expires_at > now
         ]
         return initial_count - len(self._message_queue)
+
+
+# Alias de compatibilidad hacia atrás
+AgentProtocol = Protocol

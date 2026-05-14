@@ -348,6 +348,8 @@ class RequirementsLLMEngine:
             s.strip() for s in re.split(r"[.\n]", description)
             if len(s.strip()) > 15
         ]
+        if not sentences and description.strip():
+            sentences = [description.strip()]
         requirements = []
         for i, sentence in enumerate(sentences):
             req_type = self._classify_sentence(sentence)

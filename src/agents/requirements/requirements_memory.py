@@ -173,7 +173,7 @@ class RequirementsMemory:
         metadata = {
             "req_id": doc_id,
             "title": req_dict.get("title", ""),
-            "req_type": req_dict.get("req_type", "functional"),
+            "req_type": req_dict.get("req_type", req_dict.get("type", "functional")),
             "priority": req_dict.get("priority", "should"),
             "status": req_dict.get("status", "draft"),
             "created_at": req_dict.get("created_at", datetime.now().isoformat()),
@@ -306,7 +306,7 @@ class RequirementsMemory:
         parts = [
             f"Título: {req_dict.get('title', '')}",
             f"Descripción: {req_dict.get('description', '')}",
-            f"Tipo: {req_dict.get('req_type', '')}",
+            f"Tipo: {req_dict.get('req_type', req_dict.get('type', ''))}",
             f"Prioridad: {req_dict.get('priority', '')}",
         ]
         criteria = req_dict.get("acceptance_criteria", [])

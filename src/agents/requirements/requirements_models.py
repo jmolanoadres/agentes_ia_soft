@@ -14,10 +14,45 @@ reutilizables por:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import uuid
+from dataclasses import dataclass, field, asdict
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from enum import Enum
+
+# ------------------------------------------------------------------
+# Helper serialization mixin
+# ------------------------------------------------------------------
+
+class SerializableDataclass:
+    """Mixin para serializar objetos de dominio a diccionario."""
+
+    def to_dict(self) -> Dict[str, Any]:
+        def convert(value: Any) -> Any:
+            if isinstance(value, Enum):
+                return value.value
+            if isinstance(value, datetime):
+                return value.isoformat()
+            if isinstance(value, list):
+                return [convert(v) for v in value]
+            if isinstance(value, dict):
+                return {k: convert(v) for k, v in value.items()}
+            return value
+
+        return {k: convert(v) for k, v in asdict(self).items()}
+
+    @classmethod
+    def _parse_enum(cls, enum_cls, value: Any):
+        if value is None:
+            return None
+        if isinstance(value, enum_cls):
+            return value
+        normalized = str(value).strip().lower()
+        for member in enum_cls:
+            if member.value == normalized:
+                return member
+        raise ValueError(f"Valor inválido para {enum_cls.__name__}: {value}")
+
 
 # ------------------------------------------------------------------
 # Enums (catálogos controlados / auditables)
@@ -27,6 +62,9 @@ class RequirementType(Enum):
     FUNCTIONAL = "functional"
     NON_FUNCTIONAL = "non_functional"
     CONSTRAINT = "constraint"
+    SECURITY = "security"
+    PERFORMANCE = "performance"
+    INTERFACE = "interface"
 
 
 class RequirementStatus(Enum):
@@ -35,6 +73,7 @@ class RequirementStatus(Enum):
     APPROVED = "approved"
     REJECTED = "rejected"
     DEPRECATED = "deprecated"
+    ANALYZED = "analyzed"
 
 
 class PriorityLevel(Enum):
@@ -42,6 +81,10 @@ class PriorityLevel(Enum):
     MEDIUM = "medium"
     HIGH = "high"
     CRITICAL = "critical"
+    MUST = "must"
+    SHOULD = "should"
+    COULD = "could"
+    WONT = "wont"
 
 
 class ComplexityLevel(Enum):
@@ -56,6 +99,8 @@ class ApprovalStatus(Enum):
     APPROVED = "approved"
     REJECTED = "rejected"
     NEEDS_CHANGES = "needs_changes"
+    CHANGES_REQUESTED = "changes_requested"
+    TIMED_OUT = "timed_out"
 
 
 # ------------------------------------------------------------------
@@ -63,7 +108,7 @@ class ApprovalStatus(Enum):
 # ------------------------------------------------------------------
 
 @dataclass
-class Requirement:
+class Requirement(SerializableDataclass):
     id: str
     title: str
     description: str
@@ -75,12 +120,46 @@ class Requirement:
     status: RequirementStatus = RequirementStatus.PENDING
     ambiguity_score: float = 0.0
     complexity_level: ComplexityLevel = ComplexityLevel.MEDIUM
+    tags: List[str] = field(default_factory=list)
+    risks: List[str] = field(default_factory=list)
+    priority_score: float = 0.0
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
 
+    @property
+    def req_type(self) -> RequirementType:
+        return self.type
+
+    @property
+    def is_complete(self) -> bool:
+        return bool(self.title and self.description and len(self.acceptance_criteria) >= 2)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "Requirement":
+        type_value = data.get("type") or data.get("req_type") or "functional"
+        priority_value = data.get("priority", "medium")
+        return cls(
+            id=str(data.get("id", f"REQ-{uuid.uuid4().hex[:8].upper()}")),
+            title=str(data.get("title", "")),
+            description=str(data.get("description", "")),
+            type=cls._parse_enum(RequirementType, type_value),
+            priority=cls._parse_enum(PriorityLevel, priority_value),
+            source=str(data.get("source", "user")),
+            acceptance_criteria=list(data.get("acceptance_criteria", []) or []),
+            dependencies=list(data.get("dependencies", []) or []),
+            status=cls._parse_enum(RequirementStatus, data.get("status", "pending")),
+            ambiguity_score=float(data.get("ambiguity_score", 0.0) or 0.0),
+            complexity_level=cls._parse_enum(ComplexityLevel, data.get("complexity_level", "medium")),
+            tags=list(data.get("tags", []) or []),
+            risks=list(data.get("risks", []) or []),
+            priority_score=float(data.get("priority_score", 0.0) or 0.0),
+            created_at=datetime.fromisoformat(data["created_at"]) if data.get("created_at") else datetime.now(),
+            updated_at=datetime.fromisoformat(data["updated_at"]) if data.get("updated_at") else datetime.now(),
+        )
+
 
 @dataclass
-class RequirementChange:
+class RequirementChange(SerializableDataclass):
     """Registro de cambios a un requisito (audit trail)."""
     change_id: str
     requirement_id: str
@@ -96,7 +175,7 @@ class RequirementChange:
 # ------------------------------------------------------------------
 
 @dataclass
-class UseCase:
+class UseCase(SerializableDataclass):
     id: str
     name: str
     actor: str
@@ -108,7 +187,7 @@ class UseCase:
 
 
 @dataclass
-class SRSVersion:
+class SRSVersion(SerializableDataclass):
     """Versionado formal del SRS."""
     version: str
     created_by: str
@@ -117,7 +196,7 @@ class SRSVersion:
 
 
 @dataclass
-class SoftwareRequirementsSpec:
+class SoftwareRequirementsSpec(SerializableDataclass):
     id: str
     project_name: str
     current_version: SRSVersion
@@ -137,7 +216,7 @@ class SoftwareRequirementsSpec:
 # ------------------------------------------------------------------
 
 @dataclass
-class TraceabilityEntry:
+class TraceabilityEntry(SerializableDataclass):
     requirement_id: str
     design_artifact: str
     development_artifact: str
@@ -146,7 +225,7 @@ class TraceabilityEntry:
 
 
 @dataclass
-class TraceabilityMatrix:
+class TraceabilityMatrix(SerializableDataclass):
     srs_id: str
     entries: List[TraceabilityEntry] = field(default_factory=list)
     generated_at: datetime = field(default_factory=datetime.now)
@@ -157,7 +236,7 @@ class TraceabilityMatrix:
 # ------------------------------------------------------------------
 
 @dataclass
-class ApprovalRequest:
+class ApprovalRequest(SerializableDataclass):
     request_id: str
     srs_id: str
     requested_by: str
@@ -166,7 +245,7 @@ class ApprovalRequest:
 
 
 @dataclass
-class ApprovalResponse:
+class ApprovalResponse(SerializableDataclass):
     request_id: str
     status: ApprovalStatus
     reviewed_by: str
@@ -179,7 +258,7 @@ class ApprovalResponse:
 # ------------------------------------------------------------------
 
 @dataclass
-class DesignHandoffPackage:
+class DesignHandoffPackage(SerializableDataclass):
     srs_id: str
     version: str
     requirements: List[Requirement]
@@ -189,16 +268,21 @@ class DesignHandoffPackage:
     created_at: datetime = field(default_factory=datetime.now)
 
 
-@dataclass
-class AmbiguityFlag:
-    requirement_id: str
-    term: str
-    context: str
-    severity: str
+class AmbiguityFlag(Enum):
+    VAGUE_TERM = "vague_term"
+    MISSING_METRIC = "missing_metric"
+    UNCLEAR_ACTOR = "unclear_actor"
+    MISSING_BOUNDARY = "missing_boundary"
+    PASSIVE_VOICE = "passive_voice"
+    MULTIPLE_INTERPRETATIONS = "multiple_interpretations"
+    UNDEFINED_REFERENCE = "undefined_reference"
+
+    def __str__(self) -> str:
+        return self.value
 
 
 @dataclass
-class AmbiguityReport:
+class AmbiguityReport(SerializableDataclass):
     srs_id: str
     flags: List[AmbiguityFlag] = field(default_factory=list)
     generated_at: datetime = field(default_factory=datetime.now)

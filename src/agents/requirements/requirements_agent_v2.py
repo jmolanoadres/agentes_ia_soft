@@ -19,7 +19,10 @@ from typing import Any, Dict, List, Optional, Iterable, Mapping, Tuple, Union
 from src.agents.base.base_agent import BaseAgent, AgentState, Task, TaskResult, TaskStatus, Capability
 from src.agents.base.decision_engine import DecisionEngine, DecisionType, CostBenefitRule, DecisionOption
 
-from requirements_models import (
+from .requirements_config import get_config
+from .requirements_llm import RequirementsLLMEngine
+from .requirements_memory import RequirementsMemory
+from .requirements_models import (
     Requirement, UseCase, SoftwareRequirementsSpec,
     RequirementChange, SRSVersion,
     TraceabilityEntry, TraceabilityMatrix,
@@ -28,10 +31,10 @@ from requirements_models import (
     AmbiguityReport, AmbiguityFlag,
     RequirementType, RequirementStatus,
     PriorityLevel, ComplexityLevel,
-    ApprovalStatus, SRSVersion,
+    ApprovalStatus,
 )
 
-from requirements_assumptions import AssumptionReviewSession
+from .requirements_assumptions import AssumptionReviewSession
 
 logger = logging.getLogger(__name__)
 
@@ -58,11 +61,12 @@ def normalize_requirements(items: Any) -> List[Requirement]:
             continue
         if isinstance(it, Mapping):
             rid = it.get('id') or f"REQ-{uuid.uuid4().hex[:8].upper()}"
+            req_type_str = it.get('type') or it.get('req_type') or 'functional'
             out.append(Requirement(
                 id=rid,
                 title=it.get('title', ''),
                 description=it.get('description', ''),
-                type=RequirementType(it.get('type', 'functional')),
+                type=RequirementType(req_type_str),
                 priority=PriorityLevel(it.get('priority', 'medium')),
                 source=it.get('source', 'user'),
                 acceptance_criteria=list(it.get('acceptance_criteria', []) or []),
@@ -70,6 +74,9 @@ def normalize_requirements(items: Any) -> List[Requirement]:
                 status=RequirementStatus(it.get('status', 'pending')),
                 ambiguity_score=float(it.get('ambiguity_score', 0.0) or 0.0),
                 complexity_level=ComplexityLevel(it.get('complexity_level', 'medium')),
+                tags=list(it.get('tags', []) or []),
+                risks=list(it.get('risks', []) or []),
+                priority_score=float(it.get('priority_score', 0.0) or 0.0),
             ))
             continue
         raise TypeError(f"Tipo de requisito no soportado: {type(it)}")
@@ -80,7 +87,7 @@ def normalize_requirements(items: Any) -> List[Requirement]:
 # -------------------------------------------------------------------------
 
 class RequirementsAgentV2(BaseAgent):
-    """Agente de requisitos con revisión de supuestos interactiva."""
+    """Agente de requisitos con revisión de supuestos interactiva y capacidades de aprendizaje."""
 
     def __init__(self) -> None:
         super().__init__(
@@ -88,9 +95,15 @@ class RequirementsAgentV2(BaseAgent):
             name='Requirements Agent V2',
             description='Agente de requisitos con Requisitos + revisión de supuestos + SRS + normalización y auto-refinamiento',
         )
+        self._config = get_config()
         self._decision_engine = DecisionEngine()
+        self._llm_engine = RequirementsLLMEngine(self._config) if self._config.enable_llm else None
+        self._requirements_memory = RequirementsMemory() if self._config.enable_memory else None
+
         self._current_srs: Optional[SoftwareRequirementsSpec] = None
         self._srs_store: Dict[str, SoftwareRequirementsSpec] = {}
+        self._knowledge_graph: Dict[str, Dict[str, Any]] = {}
+        self._feedback_history: List[Dict[str, Any]] = []
 
         # Motor simple de refinamiento (mínimo, sin dependencias)
         self._skill_stats: Dict[str, Dict[str, Any]] = {}
@@ -110,6 +123,12 @@ class RequirementsAgentV2(BaseAgent):
             ('generate_srs', 'Generar SRS'),
             ('create_use_cases', 'Crear casos de uso'),
             ('refine_procedures', 'Refinar procedimientos automáticamente'),
+            ('run_full_pipeline', 'Ejecutar pipeline completo de requisitos'),
+            ('detect_conflicts', 'Detectar conflictos y duplicados'),
+            ('prioritize_requirements', 'Priorizar requisitos'),
+            ('learn_from_feedback', 'Aprender de la retroalimentación'),
+            ('get_agent_metrics', 'Obtener métricas del agente'),
+            ('search_similar_requirements', 'Buscar requisitos similares en memoria'),
         ]
         for name, desc in caps:
             self.add_capability(Capability(name=name, description=desc, version='2.0.0'))
@@ -161,10 +180,23 @@ class RequirementsAgentV2(BaseAgent):
             'generate_srs': self._generate_srs,
             'create_use_cases': self._create_use_cases,
             'refine_procedures': self._refine_procedures,
+            'run_full_pipeline': self._run_full_pipeline,
+            'detect_conflicts': self._detect_conflicts,
+            'prioritize_requirements': self._prioritize_requirements,
+            'learn_from_feedback': self._learn_from_feedback,
+            'get_agent_metrics': self._get_agent_metrics,
+            'search_similar_requirements': self._search_similar_requirements,
         }.get(task_type)
 
     def _record_skill(self, name: str, success: bool, seconds: float, err: str = '') -> None:
-        s = self._skill_stats.setdefault(name, {'exec': 0, 'ok': 0, 'fail': 0, 'total_time': 0.0, 'last_error': ''})
+        s = self._skill_stats.setdefault(name, {
+            'exec': 0,
+            'ok': 0,
+            'fail': 0,
+            'total_time': 0.0,
+            'last_error': '',
+            'feedback': [],
+        })
         s['exec'] += 1
         s['total_time'] += float(seconds)
         if success:
@@ -173,14 +205,229 @@ class RequirementsAgentV2(BaseAgent):
             s['fail'] += 1
             s['last_error'] = err
 
+    async def _run_full_pipeline(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        project_name = input_data.get('project_name', 'Nuevo Proyecto')
+        project_description = input_data.get('project_description', '')
+        requirements = normalize_requirements(input_data.get('requirements', []))
+        constraints = list(input_data.get('constraints', []) or [])
+        assumptions = list(input_data.get('assumptions', []) or [])
+        glossary = input_data.get('glossary', {}) or {}
+
+        if project_description and not requirements:
+            if self._llm_engine:
+                extracted = await self._llm_engine.extract_requirements(project_description)
+            else:
+                extracted = {
+                    'requirements': [],
+                    'glossary': {},
+                    'constraints': [],
+                    'assumptions': [],
+                }
+            requirements = normalize_requirements(extracted.get('requirements', []))
+            constraints = list(extracted.get('constraints', []) or [])
+            assumptions = list(extracted.get('assumptions', []) or [])
+            glossary = extracted.get('glossary', {}) or {}
+
+        self._knowledge_graph = {
+            req.id: {
+                'title': req.title,
+                'dependencies': list(req.dependencies),
+                'priority': req.priority.value,
+                'type': req.type.value,
+                'status': req.status.value,
+            }
+            for req in requirements
+        }
+
+        analysis = await self._analyze_requirements({'requirements': [self._req_to_dict(r) for r in requirements]})
+        validation = await self._validate_requirements({'requirements': [self._req_to_dict(r) for r in requirements]})
+        conflicts = await self._detect_conflicts({'requirements': [self._req_to_dict(r) for r in requirements]})
+        prioritization = await self._prioritize_requirements({'requirements': [self._req_to_dict(r) for r in requirements]})
+        srs = await self._generate_srs({
+            'project_name': project_name,
+            'requirements': [self._req_to_dict(r) for r in requirements],
+            'constraints': constraints,
+            'assumptions': assumptions,
+        })
+        use_cases = await self._create_use_cases({'requirements': [self._req_to_dict(r) for r in requirements]})
+
+        if self._requirements_memory:
+            for req in requirements:
+                try:
+                    self._requirements_memory.store_requirement(req)
+                except Exception as exc:
+                    logger.warning('No se pudo almacenar requisito en memoria: %s', exc)
+
+        return {
+            'project_name': project_name,
+            'requirements_count': len(requirements),
+            'analysis': analysis,
+            'validation': validation,
+            'conflicts': conflicts,
+            'prioritization': prioritization,
+            'srs': srs,
+            'use_cases': use_cases,
+            'glossary': glossary,
+            'constraints': constraints,
+            'assumptions': assumptions,
+            'knowledge_graph': self._knowledge_graph,
+        }
+
+    async def _detect_conflicts(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        requirements = normalize_requirements(input_data.get('requirements', []))
+        issues: List[Dict[str, Any]] = []
+        seen_ids = set()
+        title_index: Dict[str, str] = {}
+
+        for r in requirements:
+            if r.id in seen_ids:
+                issues.append({'type': 'duplicate_id', 'requirement_id': r.id, 'severity': 'high'})
+            else:
+                seen_ids.add(r.id)
+
+            title_key = r.title.strip().lower()
+            if title_key and title_key in title_index:
+                issues.append({
+                    'type': 'duplicate_title',
+                    'requirement_id': r.id,
+                    'duplicate_of': title_index[title_key],
+                    'severity': 'medium',
+                })
+            elif title_key:
+                title_index[title_key] = r.id
+
+            if r.id in r.dependencies:
+                issues.append({'type': 'self_dependency', 'requirement_id': r.id, 'severity': 'critical'})
+
+        def _has_cycle(node_id: str, visited: set[str], stack: set[str]) -> bool:
+            if node_id not in dependency_graph:
+                return False
+            visited.add(node_id)
+            stack.add(node_id)
+            for dep in dependency_graph[node_id]:
+                if dep not in visited and _has_cycle(dep, visited, stack):
+                    return True
+                if dep in stack:
+                    return True
+            stack.remove(node_id)
+            return False
+
+        dependency_graph = {r.id: set(r.dependencies) for r in requirements}
+        for req_id in dependency_graph:
+            if _has_cycle(req_id, set(), set()):
+                issues.append({'type': 'circular_dependency', 'requirement_id': req_id, 'severity': 'critical'})
+
+        if self._requirements_memory:
+            for req in requirements:
+                duplicates = self._requirements_memory.detect_duplicates(req)
+                for duplicate in duplicates:
+                    issues.append({
+                        'type': 'possible_duplicate',
+                        'requirement_id': req.id,
+                        'duplicate_reference': duplicate.get('metadata', {}).get('req_id'),
+                        'similarity': duplicate.get('similarity'),
+                        'severity': 'medium',
+                    })
+
+        return {
+            'conflicts': issues,
+            'conflict_count': len(issues),
+        }
+
+    async def _prioritize_requirements(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        requirements = normalize_requirements(input_data.get('requirements', []))
+        priority_score_map = {
+            PriorityLevel.MUST: 1.0,
+            PriorityLevel.SHOULD: 0.8,
+            PriorityLevel.COULD: 0.6,
+            PriorityLevel.WONT: 0.2,
+            PriorityLevel.CRITICAL: 0.95,
+            PriorityLevel.HIGH: 0.8,
+            PriorityLevel.MEDIUM: 0.6,
+            PriorityLevel.LOW: 0.4,
+        }
+
+        for r in requirements:
+            base_score = priority_score_map.get(r.priority, 0.5)
+            ambiguity_penalty = min(0.25, r.ambiguity_score * 0.2)
+            dependency_bonus = min(0.1, len(r.dependencies) * 0.02)
+            r.priority_score = round(max(0.0, base_score - ambiguity_penalty + dependency_bonus), 4)
+
+        ordered = sorted(requirements, key=lambda x: x.priority_score, reverse=True)
+        return {
+            'requirements': [self._req_to_dict(r) for r in ordered],
+            'priority_order': [r.id for r in ordered],
+        }
+
+    async def _learn_from_feedback(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        feedback = input_data.get('feedback', {})
+        task_type = feedback.get('task_type') or input_data.get('task_type')
+        rating = feedback.get('rating')
+        comments = feedback.get('comments', '')
+        record = {
+            'task_type': task_type,
+            'rating': rating,
+            'comments': comments,
+            'timestamp': time.monotonic(),
+        }
+        self._feedback_history.append(record)
+
+        if task_type:
+            skill = self._skill_stats.setdefault(task_type, {'exec': 0, 'ok': 0, 'fail': 0, 'total_time': 0.0, 'last_error': '', 'feedback': []})
+            if rating is not None:
+                skill['feedback'].append(rating)
+
+        learned = {
+            'stored_feedback': True,
+            'feedback_count': len(self._feedback_history),
+            'adaptive_changes': {
+                'auto_approve_threshold': self._config.auto_approve_threshold,
+                'enable_memory': self._config.enable_memory,
+            },
+        }
+        return learned
+
+    async def _get_agent_metrics(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            'agent_id': self.agent_id,
+            'state': self.state.value,
+            'tasks_completed': self.metrics.tasks_completed,
+            'tasks_failed': self.metrics.tasks_failed,
+            'average_execution_time': self.metrics.average_execution_time,
+            'last_execution': self.metrics.last_execution.isoformat() if self.metrics.last_execution else None,
+            'skill_stats': self._skill_stats,
+            'feedback_history_count': len(self._feedback_history),
+            'memory_stats': self._requirements_memory.stats() if self._requirements_memory else None,
+        }
+
+    async def _search_similar_requirements(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        if not self._requirements_memory:
+            return {
+                'error': 'Memory backend not enabled',
+                'results': [],
+            }
+        query = str(input_data.get('query', '')).strip()
+        if not query:
+            return {'error': 'Query is required', 'results': []}
+        results = self._requirements_memory.search_similar(query, top_k=int(input_data.get('top_k', 5)))
+        return {
+            'query': query,
+            'results': results,
+        }
+
     # -------------------- Capabilities --------------------
 
     async def _gather_requirements(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        # Implementación base (placeholder): retorna requisitos normalizados
-        reqs = normalize_requirements(input_data.get('requirements', []))
+        requirements = normalize_requirements(input_data.get('requirements', []))
+        if not requirements and input_data.get('project_description'):
+            project_description = str(input_data.get('project_description', '')).strip()
+            if project_description and self._llm_engine:
+                extracted = await self._llm_engine.extract_requirements(project_description)
+                requirements = normalize_requirements(extracted.get('requirements', []))
+
         return {
-            'requirements': [self._req_to_dict(r) for r in reqs],
-            'count': len(reqs),
+            'requirements': [self._req_to_dict(r) for r in requirements],
+            'count': len(requirements),
         }
 
     def _collect_assumptions(self, input_data: Dict[str, Any], requirements: List[Requirement]) -> List[str]:
