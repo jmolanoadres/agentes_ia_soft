@@ -1,4 +1,3 @@
-
 """requirements_assumptions.py
 
 Módulo de revisión interactiva de supuestos (assumptions).
@@ -17,7 +16,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 @dataclass
@@ -27,10 +26,10 @@ class AssumptionItem:
     id: str
     text: str
     status: str = "assumed"  # assumed | accepted | rejected | redefined | added
-    user_definition: Optional[str] = None
+    user_definition: str | None = None
     created_at: datetime = field(default_factory=datetime.now)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "text": self.text,
@@ -62,9 +61,9 @@ class AssumptionReviewSession:
     La sesión es determinista y serializable.
     """
 
-    def __init__(self, assumptions: List[str]) -> None:
+    def __init__(self, assumptions: list[str]) -> None:
         self.session_id: str = str(uuid.uuid4())
-        self.items: List[AssumptionItem] = [
+        self.items: list[AssumptionItem] = [
             AssumptionItem(id=str(uuid.uuid4()), text=a.strip())
             for a in assumptions
             if a and a.strip()
@@ -76,8 +75,8 @@ class AssumptionReviewSession:
         )
         self.items.append(self.other_item)
 
-        self.selected_indexes: List[int] = []  # índices a redefinir (1-based)
-        self.questions: List[int] = []         # cola de índices (1-based)
+        self.selected_indexes: list[int] = []  # índices a redefinir (1-based)
+        self.questions: list[int] = []  # cola de índices (1-based)
         self.current_question_pos: int = 0
         self.started: bool = False
         self.completed: bool = False
@@ -86,7 +85,7 @@ class AssumptionReviewSession:
     def other_index(self) -> int:
         return len(self.items)  # siempre último (1-based)
 
-    def start(self) -> Dict[str, Any]:
+    def start(self) -> dict[str, Any]:
         self.started = True
         return {
             "session_id": self.session_id,
@@ -101,7 +100,7 @@ class AssumptionReviewSession:
             "other_index": self.other_index,
         }
 
-    def apply_selection(self, user_input: str) -> Dict[str, Any]:
+    def apply_selection(self, user_input: str) -> dict[str, Any]:
         if not self.started:
             return self.start()
 
@@ -132,7 +131,7 @@ class AssumptionReviewSession:
         # primera pregunta
         return self._next_question_payload()
 
-    def answer_current(self, answer: str) -> Dict[str, Any]:
+    def answer_current(self, answer: str) -> dict[str, Any]:
         if self.completed:
             return {
                 "session_id": self.session_id,
@@ -176,7 +175,7 @@ class AssumptionReviewSession:
 
     # ------------------------ helpers ------------------------
 
-    def _next_question_payload(self) -> Dict[str, Any]:
+    def _next_question_payload(self) -> dict[str, Any]:
         total = len(self.questions)
         current = self.current_question_pos + 1
         idx = self.questions[self.current_question_pos]
@@ -185,7 +184,9 @@ class AssumptionReviewSession:
         progress = render_progress_bar(current - 1, total)
 
         if idx == self.other_index:
-            question = "Has seleccionado 'Otra'. Especifica el supuesto adicional que deseas incluir:" 
+            question = (
+                "Has seleccionado 'Otra'. Especifica el supuesto adicional que deseas incluir:"
+            )
         else:
             question = (
                 f"Redefine el supuesto #{idx}: '{item.text}'. "
@@ -203,8 +204,8 @@ class AssumptionReviewSession:
             "note": "En la lista, el último ítem es la opción 'Otra'.",
         }
 
-    def _render_list(self, show_status: bool = False, mark_other: bool = False) -> List[str]:
-        out: List[str] = []
+    def _render_list(self, show_status: bool = False, mark_other: bool = False) -> list[str]:
+        out: list[str] = []
         for i, item in enumerate(self.items, start=1):
             suffix = ""
             if show_status:
@@ -214,7 +215,7 @@ class AssumptionReviewSession:
             out.append(f"{i}. {item.text}{suffix}")
         return out
 
-    def _parse_selection(self, user_input: str) -> List[int]:
+    def _parse_selection(self, user_input: str) -> list[int]:
         s = (user_input or "").strip().lower()
         if s in ("0", "", "ninguna", "ninguno", "todo", "ok"):
             return []
@@ -224,7 +225,7 @@ class AssumptionReviewSession:
             return [self.other_index]
 
         # parse coma/espacios
-        nums: List[int] = []
+        nums: list[int] = []
         for part in s.replace(";", ",").split(","):
             p = part.strip()
             if not p:

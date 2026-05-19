@@ -1,12 +1,19 @@
 """Code Frontend Agent for frontend implementation and code generation."""
 
 import logging
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
-import uuid
+from typing import Any
 
-from src.agents.base.base_agent import BaseAgent, AgentState, Task, TaskResult, TaskStatus, Capability
+from src.agents.base.base_agent import (
+    AgentState,
+    BaseAgent,
+    Capability,
+    Task,
+    TaskResult,
+    TaskStatus,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -14,81 +21,83 @@ logger = logging.getLogger(__name__)
 @dataclass
 class FrontendComponent:
     """Componente frontend."""
+
     id: str
     name: str
     component_type: str  # component, page, hook, service
     framework: str  # react, vue, angular
-    props: Dict[str, Any] = field(default_factory=dict)
-    state: Dict[str, Any] = field(default_factory=dict)
-    styles: Dict[str, Any] = field(default_factory=dict)
+    props: dict[str, Any] = field(default_factory=dict)
+    state: dict[str, Any] = field(default_factory=dict)
+    styles: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class FrontendModule:
     """Módulo frontend generado."""
+
     id: str
     name: str
     file_path: str
     content: str
     language: str
     framework: str
-    imports: List[str] = field(default_factory=list)
-    dependencies: List[str] = field(default_factory=list)
+    imports: list[str] = field(default_factory=list)
+    dependencies: list[str] = field(default_factory=list)
     created_at: datetime = field(default_factory=datetime.now)
 
 
 class CodeFrontendAgent(BaseAgent):
     """Agente especializado en generación de código frontend."""
-    
-    def __init__(self):
+
+    def __init__(self) -> None:
         super().__init__(
             agent_id="code_frontend",
             name="Code Frontend Agent",
-            description="Agente para implementación de código frontend (React, Vue, Angular)"
+            description="Agente para implementación de código frontend (React, Vue, Angular)",
         )
-        self._generated_modules: Dict[str, FrontendModule] = {}
+        self._generated_modules: dict[str, FrontendModule] = {}
         self._component_templates = self._load_templates()
-        
+
         self._register_capabilities()
-    
+
     def _register_capabilities(self) -> None:
         """Registrar las capacidades del agente."""
-        self.add_capability(Capability(
-            name="generate_components",
-            description="Generar componentes React/Vue/Angular",
-            version="1.0.0"
-        ))
-        self.add_capability(Capability(
-            name="generate_pages",
-            description="Generar páginas completas",
-            version="1.0.0"
-        ))
-        self.add_capability(Capability(
-            name="generate_hooks",
-            description="Generar custom hooks",
-            version="1.0.0"
-        ))
-        self.add_capability(Capability(
-            name="generate_services",
-            description="Generar servicios API",
-            version="1.0.0"
-        ))
-        self.add_capability(Capability(
-            name="generate_styles",
-            description="Generar estilos y temas",
-            version="1.0.0"
-        ))
-        self.add_capability(Capability(
-            name="setup_project",
-            description="Configurar proyecto frontend",
-            version="1.0.0"
-        ))
-    
-    def _load_templates(self) -> Dict[str, Dict[str, str]]:
+        self.add_capability(
+            Capability(
+                name="generate_components",
+                description="Generar componentes React/Vue/Angular",
+                version="1.0.0",
+            )
+        )
+        self.add_capability(
+            Capability(
+                name="generate_pages", description="Generar páginas completas", version="1.0.0"
+            )
+        )
+        self.add_capability(
+            Capability(name="generate_hooks", description="Generar custom hooks", version="1.0.0")
+        )
+        self.add_capability(
+            Capability(
+                name="generate_services", description="Generar servicios API", version="1.0.0"
+            )
+        )
+        self.add_capability(
+            Capability(
+                name="generate_styles", description="Generar estilos y temas", version="1.0.0"
+            )
+        )
+        self.add_capability(
+            Capability(
+                name="setup_project", description="Configurar proyecto frontend", version="1.0.0"
+            )
+        )
+
+    def _load_templates(self) -> dict[str, dict[str, str]]:
         """Cargar plantillas de código frontend."""
         return {
             "react": {
-                "component": '''import React, {{ useState, useEffect }} from 'react';
+                "component": """import React, {{ useState, useEffect }} from 'react';
 import PropTypes from 'prop-types';
 import './{component_name}.css';
 
@@ -105,8 +114,7 @@ const {class_name} = ({{ props }}) => {{
 
   return (
     <div className="{component_name}">
-      {/* Component JSX */}
-    </div>
+      {{/* Component JSX */}}
   );
 }};
 
@@ -119,8 +127,8 @@ const {class_name} = ({{ props }}) => {{
 }};
 
 export default {class_name};
-''',
-                "page": '''import React from 'react';
+""",
+                "page": """import React from 'react';
 import {{ useParams, useNavigate }} from 'react-router-dom';
 import './{page_name}.css';
 
@@ -133,14 +141,14 @@ const {class_name} = () => {{
   return (
     <div className="{page_name}">
       <h1>{page_title}</h1>
-      {/* Page content */}
+      {{/* Page content */}}
     </div>
   );
 }};
 
 export default {class_name};
-''',
-                "hook": '''import {{ useState, useEffect, useCallback }} from 'react';
+""",
+                "hook": """import {{ useState, useEffect, useCallback }} from 'react';
 
 export const use{hook_name} = (params) => {{
   const [data, setData] = useState(null);
@@ -166,8 +174,8 @@ export const use{hook_name} = (params) => {{
 
   return {{ data, loading, error, refetch: fetchData }};
 }};
-''',
-                "service": '''import axios from 'axios';
+""",
+                "service": """import axios from 'axios';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '/api';
 
@@ -208,8 +216,8 @@ export const update{entity_name} = (id, data) => {service_name}.put(`/${{entity}
 export const delete{entity_name} = (id) => {service_name}.delete(`/${{entity}}/${{id}}`);
 
 export default {service_name};
-''',
-                "styles": '''/* {component_name} styles */
+""",
+                "styles": """/* {component_name} styles */
 .{class_name} {{
   /* Base styles */
 }}
@@ -224,10 +232,10 @@ export default {service_name};
     /* Mobile styles */
   }}
 }}
-'''
+""",
             },
             "vue": {
-                "component": '''<template>
+                "component": """<template>
   <div class="{component_name}">
     <!-- Component template -->
   </div>
@@ -271,8 +279,8 @@ onMounted(() => {{
   // Component styles
 }}
 </style>
-''',
-                "page": '''<template>
+""",
+                "page": """<template>
   <div class="{page_name}">
     <h1>{page_title}</h1>
     <!-- Page content -->
@@ -297,24 +305,24 @@ onMounted(() => {{
   // Page styles
 }}
 </style>
-'''
-            }
+""",
+            },
         }
-    
+
     async def initialize(self) -> None:
         """Inicializar el agente."""
         self.update_state(AgentState.INITIALIZING)
         logger.info(f"Initializing {self._name}")
         self.update_state(AgentState.IDLE)
-    
+
     async def execute(self, task: Task) -> TaskResult:
         """Ejecutar una tarea de código frontend."""
         start_time = datetime.now()
         self.update_state(AgentState.PROCESSING)
-        
+
         try:
             task_type = task.type
-            
+
             if task_type == "generate_components":
                 result = await self._generate_components(task.input_data)
             elif task_type == "generate_pages":
@@ -329,49 +337,46 @@ onMounted(() => {{
                 result = await self._setup_project(task.input_data)
             else:
                 raise ValueError(f"Unknown task type: {task_type}")
-            
+
             execution_time = (datetime.now() - start_time).total_seconds()
             self.update_metrics(execution_time, success=True)
             self.update_state(AgentState.IDLE)
-            
+
             return TaskResult(
                 task_id=task.id,
                 status=TaskStatus.COMPLETED,
                 output_data=result,
-                execution_time=execution_time
+                execution_time=execution_time,
             )
-            
+
         except Exception as e:
             execution_time = (datetime.now() - start_time).total_seconds()
             self.update_metrics(execution_time, success=False)
             self.update_state(AgentState.ERROR)
             logger.error(f"Error executing task: {e}")
-            
+
             return TaskResult(
                 task_id=task.id,
                 status=TaskStatus.FAILED,
                 error=str(e),
-                execution_time=execution_time
+                execution_time=execution_time,
             )
-    
-    async def _generate_components(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+
+    async def _generate_components(self, input_data: dict[str, Any]) -> dict[str, Any]:
         """Generar componentes frontend."""
         component_name = input_data.get("component_name", "Component")
         framework = input_data.get("framework", "react")
-        props = input_data.get("props", {})
-        
+
         template = self._component_templates.get(framework, {}).get("component", "")
-        
+
         if not template:
             return {"error": f"Framework not supported: {framework}"}
-        
+
         # Generate component
         content = template.format(
-            component_name=component_name,
-            class_name=component_name,
-            initial_state="{}"
+            component_name=component_name, class_name=component_name, initial_state="{}"
         )
-        
+
         module_obj = FrontendModule(
             id=str(uuid.uuid4()),
             name=component_name,
@@ -379,50 +384,47 @@ onMounted(() => {{
             content=content,
             language="javascript",
             framework=framework,
-            imports=["react" if framework == "react" else "vue"]
+            imports=["react" if framework == "react" else "vue"],
         )
-        
+
         self._generated_modules[module_obj.id] = module_obj
-        
+
         # Also generate index export
         index_content = f"export {{ default }} from './{component_name}';"
-        
+
         return {
             "component_name": component_name,
             "framework": framework,
             "files": {
-                "component": {
-                    "path": module_obj.file_path,
-                    "content": content
-                },
+                "component": {"path": module_obj.file_path, "content": content},
                 "index": {
                     "path": f"src/components/{component_name}/index.js",
-                    "content": index_content
+                    "content": index_content,
                 },
                 "styles": {
                     "path": f"src/components/{component_name}/{component_name}.{'css' if framework == 'react' else 'scss'}",
-                    "content": f"/* {component_name} styles */"
-                }
-            }
+                    "content": f"/* {component_name} styles */",
+                },
+            },
         }
-    
-    async def _generate_pages(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+
+    async def _generate_pages(self, input_data: dict[str, Any]) -> dict[str, Any]:
         """Generar páginas completas."""
         page_name = input_data.get("page_name", "Page")
         framework = input_data.get("framework", "react")
         route_path = input_data.get("route_path", f"/{page_name.lower()}")
-        
+
         template = self._component_templates.get(framework, {}).get("page", "")
-        
+
         if not template:
             return {"error": f"Framework not supported: {framework}"}
-        
+
         content = template.format(
             page_name=page_name.lower(),
             page_title=page_name.replace("_", " ").title(),
-            class_name=page_name
+            class_name=page_name,
         )
-        
+
         module_obj = FrontendModule(
             id=str(uuid.uuid4()),
             name=page_name,
@@ -430,39 +432,36 @@ onMounted(() => {{
             content=content,
             language="javascript",
             framework=framework,
-            imports=["react-router-dom" if framework == "react" else "vue-router"]
+            imports=["react-router-dom" if framework == "react" else "vue-router"],
         )
-        
+
         self._generated_modules[module_obj.id] = module_obj
-        
+
         return {
             "page_name": page_name,
             "framework": framework,
             "route_path": route_path,
             "files": {
-                "page": {
-                    "path": module_obj.file_path,
-                    "content": content
-                },
+                "page": {"path": module_obj.file_path, "content": content},
                 "index": {
                     "path": f"src/pages/{page_name}/index.js",
-                    "content": f"export {{ default }} from './{page_name}.{'jsx' if framework == 'react' else 'vue'}';"
-                }
-            }
+                    "content": f"export {{ default }} from './{page_name}.{'jsx' if framework == 'react' else 'vue'}';",
+                },
+            },
         }
-    
-    async def _generate_hooks(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+
+    async def _generate_hooks(self, input_data: dict[str, Any]) -> dict[str, Any]:
         """Generar custom hooks."""
         hook_name = input_data.get("hook_name", "useCustom")
         framework = input_data.get("framework", "react")
-        
+
         template = self._component_templates.get(framework, {}).get("hook", "")
-        
+
         if not template:
             return {"error": f"Framework not supported: {framework}"}
-        
+
         content = template.format(hook_name=hook_name)
-        
+
         module_obj = FrontendModule(
             id=str(uuid.uuid4()),
             name=hook_name,
@@ -470,37 +469,32 @@ onMounted(() => {{
             content=content,
             language="javascript",
             framework=framework,
-            imports=["react"]
+            imports=["react"],
         )
-        
+
         self._generated_modules[module_obj.id] = module_obj
-        
+
         return {
             "hook_name": hook_name,
             "framework": framework,
-            "file": {
-                "path": module_obj.file_path,
-                "content": content
-            }
+            "file": {"path": module_obj.file_path, "content": content},
         }
-    
-    async def _generate_services(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+
+    async def _generate_services(self, input_data: dict[str, Any]) -> dict[str, Any]:
         """Generar servicios API."""
         service_name = input_data.get("service_name", "api")
         entity = input_data.get("entity", "entity")
         framework = input_data.get("framework", "react")
-        
+
         template = self._component_templates.get(framework, {}).get("service", "")
-        
+
         if not template:
             return {"error": f"Framework not supported: {framework}"}
-        
+
         content = template.format(
-            service_name=service_name,
-            entity_name=entity.title(),
-            entity=entity.lower()
+            service_name=service_name, entity_name=entity.title(), entity=entity.lower()
         )
-        
+
         module_obj = FrontendModule(
             id=str(uuid.uuid4()),
             name=service_name,
@@ -508,100 +502,81 @@ onMounted(() => {{
             content=content,
             language="javascript",
             framework=framework,
-            imports=["axios"]
+            imports=["axios"],
         )
-        
+
         self._generated_modules[module_obj.id] = module_obj
-        
+
         return {
             "service_name": service_name,
             "entity": entity,
             "framework": framework,
-            "file": {
-                "path": module_obj.file_path,
-                "content": content
-            }
+            "file": {"path": module_obj.file_path, "content": content},
         }
-    
-    async def _generate_styles(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+
+    async def _generate_styles(self, input_data: dict[str, Any]) -> dict[str, Any]:
         """Generar estilos y temas."""
         component_name = input_data.get("component_name", "Component")
         framework = input_data.get("framework", "react")
         style_type = input_data.get("style_type", "css")  # css, scss, styled
-        
+
         template = self._component_templates.get(framework, {}).get("styles", "")
-        
+
         if not template:
             template = "/* {component_name} styles */\n.{class_name} {{ }}\n"
-        
-        content = template.format(
-            component_name=component_name,
-            class_name=component_name
-        )
-        
-        return {
-            "component_name": component_name,
-            "style_type": style_type,
-            "content": content
-        }
-    
-    async def _setup_project(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+
+        content = template.format(component_name=component_name, class_name=component_name)
+
+        return {"component_name": component_name, "style_type": style_type, "content": content}
+
+    async def _setup_project(self, input_data: dict[str, Any]) -> dict[str, Any]:
         """Configurar proyecto frontend."""
         project_name = input_data.get("project_name", "frontend")
         framework = input_data.get("framework", "react")
         typescript = input_data.get("typescript", False)
-        
+
         files = {}
-        
+
         if framework == "react":
             # package.json
             files["package.json"] = self._generate_react_package_json(project_name, typescript)
-            
+
             # vite.config.js
             files["vite.config.js"] = self._generate_vite_config()
-            
+
             # index.html
             files["index.html"] = self._generate_index_html(project_name)
-            
+
             # src/main.jsx
             files["src/main.jsx"] = self._generate_main_jsx(typescript)
-            
+
             # src/App.jsx
             files["src/App.jsx"] = self._generate_app_jsx(typescript)
-            
+
             # src/index.css
             files["src/index.css"] = self._generate_global_css()
-        
+
         return {
             "project_name": project_name,
             "framework": framework,
             "typescript": typescript,
-            "files": files
+            "files": files,
         }
-    
+
     async def shutdown(self) -> None:
         """Limpiar recursos."""
         self.update_state(AgentState.SHUTTING_DOWN)
         logger.info(f"Shutting down {self._name}")
         self.update_state(AgentState.IDLE)
-    
+
     def _generate_react_package_json(self, project_name: str, typescript: bool) -> str:
         """Generar package.json para React."""
-        deps = {
-            "react": "^18.2.0",
-            "react-dom": "^18.2.0",
-            "react-router-dom": "^6.20.0"
-        }
-        dev_deps = {
-            "@vitejs/plugin-react": "^4.2.0",
-            "vite": "^5.0.0"
-        }
-        
+        deps = {"react": "^18.2.0", "react-dom": "^18.2.0", "react-router-dom": "^6.20.0"}
+        dev_deps = {"@vitejs/plugin-react": "^4.2.0", "vite": "^5.0.0"}
+
         if typescript:
             deps["typescript"] = "^5.3.0"
-        
-        import_str = ", ".join([f'"{k}": "{v}"' for k, v in {**deps, **dev_deps}.items()])
-        
+
         return f'''{{
   "name": "{project_name}",
   "version": "1.0.0",
@@ -614,10 +589,10 @@ onMounted(() => {{
   "dependencies": {{ {", ".join([f'"{k}": "{v}"' for k, v in deps.items()])} }},
   "devDependencies": {{ {", ".join([f'"{k}": "{v}"' for k, v in dev_deps.items()])} }}
 }}'''
-    
+
     def _generate_vite_config(self) -> str:
         """Generar configuración de Vite."""
-        return '''import { defineConfig } from 'vite';
+        return """import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
@@ -632,11 +607,11 @@ export default defineConfig({
     },
   },
 });
-'''
-    
+"""
+
     def _generate_index_html(self, project_name: str) -> str:
         """Generar index.html."""
-        return f'''<!DOCTYPE html>
+        return f"""<!DOCTYPE html>
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
@@ -649,11 +624,11 @@ export default defineConfig({
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
-'''
-    
+"""
+
     def _generate_main_jsx(self, typescript: bool) -> str:
         ext = "tsx" if typescript else "jsx"
-        return f'''import React from 'react';
+        return f"""import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App.{ext}';
 import './index.css';
@@ -663,29 +638,29 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <App />
   </React.StrictMode>
 );
-'''
-    
+"""
+
     def _generate_app_jsx(self, typescript: bool) -> str:
         ext = "tsx" if typescript else "jsx"
-        return f'''import React from 'react';
+        return """import React from 'react';
 import {{ BrowserRouter, Routes, Route }} from 'react-router-dom';
 
 function App() {{
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<div>Home</div>} />
+        <Route path="/" element={<> <div>Home</div> </>} />
       </Routes>
     </BrowserRouter>
   );
 }}
 
 export default App;
-'''
-    
+""".replace("{ext}", ext)
+
     def _generate_global_css(self) -> str:
         """Generar CSS global."""
-        return '''* {
+        return """* {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
@@ -700,8 +675,8 @@ body {
 #root {
   min-height: 100vh;
 }
-'''
-    
-    def get_generated_modules(self) -> Dict[str, FrontendModule]:
+"""
+
+    def get_generated_modules(self) -> dict[str, FrontendModule]:
         """Obtener módulos generados."""
         return self._generated_modules

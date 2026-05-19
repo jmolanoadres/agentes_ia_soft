@@ -3,7 +3,7 @@ Configuración del Requirements Agent v2.0.
 Variables de entorno con prefijo SDLAS_REQ_.
 """
 
-from typing import Optional
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -31,16 +31,17 @@ class RequirementsConfig(BaseSettings):
 
     # ── Análisis de requisitos ───────────────────
     ambiguity_threshold: float = Field(
-        default=0.4, ge=0.0, le=1.0,
-        description="Umbral sobre el cual un requisito se marca como ambiguo"
+        default=0.4,
+        ge=0.0,
+        le=1.0,
+        description="Umbral sobre el cual un requisito se marca como ambiguo",
     )
     max_requirements_per_srs: int = Field(default=100, ge=1)
     min_acceptance_criteria: int = Field(default=2, ge=1)
 
     # ── Aprobación ───────────────────────────────
     auto_approve_threshold: float = Field(
-        default=95.0, ge=0.0, le=100.0,
-        description="Completeness score mínimo para auto-aprobación"
+        default=95.0, ge=0.0, le=100.0, description="Completeness score mínimo para auto-aprobación"
     )
     approval_timeout_seconds: int = Field(default=3600, ge=60)
 
@@ -55,7 +56,7 @@ class RequirementsConfig(BaseSettings):
 
 
 # ── Singleton ────────────────────────────────────
-_config_instance: Optional[RequirementsConfig] = None
+_config_instance: RequirementsConfig | None = None
 
 
 def get_config() -> RequirementsConfig:

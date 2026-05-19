@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from .requirements_config import get_config
 
@@ -22,25 +22,23 @@ try:
     CHROMADB_AVAILABLE = True
 except ImportError:
     CHROMADB_AVAILABLE = False
-    logger.warning(
-        "chromadb no está instalado. Usando almacenamiento en memoria como fallback."
-    )
+    logger.warning("chromadb no está instalado. Usando almacenamiento en memoria como fallback.")
 
 
 class InMemoryVectorStore:
     """Fallback cuando ChromaDB no está disponible."""
 
-    def __init__(self):
-        self._store: Dict[str, Dict[str, Any]] = {}
-        self._documents: List[str] = []
-        self._metadatas: List[Dict] = []
-        self._ids: List[str] = []
+    def __init__(self) -> None:
+        self._store: dict[str, dict[str, Any]] = {}
+        self._documents: list[str] = []
+        self._metadatas: list[dict[str, Any]] = []
+        self._ids: list[str] = []
 
     def add(
         self,
-        documents: List[str],
-        metadatas: List[Dict],
-        ids: List[str],
+        documents: list[str],
+        metadatas: list[dict[str, Any]],
+        ids: list[str],
     ) -> None:
         for doc, meta, doc_id in zip(documents, metadatas, ids):
             self._store[doc_id] = {
@@ -53,9 +51,9 @@ class InMemoryVectorStore:
 
     def query(
         self,
-        query_texts: List[str],
+        query_texts: list[str],
         n_results: int = 5,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Búsqueda simple por coincidencia de palabras clave."""
         results_docs = []
         results_meta = []
@@ -94,7 +92,7 @@ class InMemoryVectorStore:
     def count(self) -> int:
         return len(self._store)
 
-    def delete(self, ids: Optional[List[str]] = None) -> None:
+    def delete(self, ids: list[str] | None = None) -> None:
         if ids:
             for doc_id in ids:
                 self._store.pop(doc_id, None)
@@ -119,19 +117,19 @@ class RequirementsMemory:
     def __init__(
         self,
         collection_name: str = "requirements",
-        persist_directory: Optional[str] = None,
+        persist_directory: str | None = None,
     ):
         config = get_config()
         self._collection_name = collection_name
         self._persist_dir = persist_directory or config.vector_db_path
         self._similarity_threshold = config.similarity_threshold
-        self._collection = self._init_collection()
+        self._collection: Any = self._init_collection()
         logger.info(
             f"RequirementsMemory inicializado "
             f"[backend={'chromadb' if CHROMADB_AVAILABLE else 'in-memory'}]"
         )
 
-    def _init_collection(self):
+    def _init_collection(self) -> Any:
         """Inicializar colección de vectores."""
         if CHROMADB_AVAILABLE:
             try:
@@ -156,7 +154,7 @@ class RequirementsMemory:
 
     # ── Operaciones principales ──────────────────
 
-    def store_requirement(self, requirement) -> str:
+    def store_requirement(self, requirement: Any) -> str:
         """
         Almacenar un requisito en la memoria vectorial.
 
@@ -168,7 +166,7 @@ class RequirementsMemory:
         """
         req_dict = requirement.to_dict()
         doc_text = self._requirement_to_text(req_dict)
-        doc_id = req_dict.get("id", str(uuid.uuid4()))
+        doc_id = str(req_dict.get("id", str(uuid.uuid4())))
 
         metadata = {
             "req_id": doc_id,
@@ -193,7 +191,7 @@ class RequirementsMemory:
         self,
         query: str,
         top_k: int = 5,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Buscar requisitos similares a una consulta.
 
@@ -216,20 +214,22 @@ class RequirementsMemory:
             dists = results["distances"][0] if results.get("distances") else [0.0] * len(docs)
 
             for doc, meta, dist in zip(docs, metas, dists):
-                output.append({
-                    "document": doc,
-                    "metadata": meta,
-                    "distance": dist,
-                    "similarity": 1.0 - dist,
-                })
+                output.append(
+                    {
+                        "document": doc,
+                        "metadata": meta,
+                        "distance": dist,
+                        "similarity": 1.0 - dist,
+                    }
+                )
 
         return output
 
     def detect_duplicates(
         self,
-        requirement,
-        threshold: Optional[float] = None,
-    ) -> List[Dict[str, Any]]:
+        requirement: Any,
+        threshold: float | None = None,
+    ) -> list[dict[str, Any]]:
         """
         Detectar posibles duplicados de un requisito.
 
@@ -250,8 +250,7 @@ class RequirementsMemory:
 
         if duplicates:
             logger.warning(
-                f"Posibles duplicados detectados para '{req_dict.get('title')}': "
-                f"{len(duplicates)}"
+                f"Posibles duplicados detectados para '{req_dict.get('title')}': {len(duplicates)}"
             )
 
         return duplicates
@@ -260,7 +259,7 @@ class RequirementsMemory:
         self,
         project_type: str,
         top_k: int = 10,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Obtener contexto histórico de requisitos similares.
 
@@ -278,7 +277,7 @@ class RequirementsMemory:
 
     def clear(self) -> int:
         """Limpiar toda la memoria."""
-        count = self.stats().get("total_documents", 0)
+        count: int = int(self.stats().get("total_documents", 0))
         if isinstance(self._collection, InMemoryVectorStore):
             self._collection.delete()
         else:
@@ -290,7 +289,7 @@ class RequirementsMemory:
         logger.info(f"Memoria limpiada: {count} documentos eliminados")
         return count
 
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         """Obtener estadísticas de la memoria."""
         count = self._collection.count()
         return {
@@ -301,7 +300,7 @@ class RequirementsMemory:
         }
 
     @staticmethod
-    def _requirement_to_text(req_dict: Dict[str, Any]) -> str:
+    def _requirement_to_text(req_dict: dict[str, Any]) -> str:
         """Convertir requisito a texto para embedding."""
         parts = [
             f"Título: {req_dict.get('title', '')}",

@@ -8,11 +8,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timedelta
+from collections.abc import Callable
+from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 from .requirements_config import get_config
+from .requirements_llm import RequirementsLLMEngine
 from .requirements_models import (
     ApprovalRequest,
     ApprovalResponse,
@@ -22,6 +24,7 @@ from .requirements_models import (
     Requirement,
     RequirementStatus,
     SoftwareRequirementsSpec,
+    SRSVersion,
     TraceabilityEntry,
     TraceabilityMatrix,
     UseCase,
@@ -32,6 +35,7 @@ logger = logging.getLogger(__name__)
 
 class WorkflowStage(Enum):
     """Etapas del pipeline de requisitos."""
+
     GATHER = "gather"
     ANALYZE = "analyze"
     DETECT_AMBIGUITY = "detect_ambiguity"
@@ -43,6 +47,7 @@ class WorkflowStage(Enum):
 
 class WorkflowStatus(Enum):
     """Estado del workflow."""
+
     NOT_STARTED = "not_started"
     IN_PROGRESS = "in_progress"
     WAITING_APPROVAL = "waiting_approval"
@@ -56,6 +61,7 @@ class WorkflowStatus(Enum):
 #  APPROVAL GATE
 # ═══════════════════════════════════════════════
 
+
 class ApprovalGate:
     """
     Puerta de aprobación humana (Human-in-the-Loop).
@@ -64,23 +70,23 @@ class ApprovalGate:
     antes de hacer handoff al Design Agent.
     """
 
-    def __init__(self, timeout_seconds: Optional[int] = None):
+    def __init__(self, timeout_seconds: int | None = None):
         config = get_config()
         self._timeout = timeout_seconds or config.approval_timeout_seconds
         self._auto_threshold = config.auto_approve_threshold
-        self._pending_requests: Dict[str, ApprovalRequest] = {}
-        self._responses: Dict[str, ApprovalResponse] = {}
-        self._response_events: Dict[str, asyncio.Event] = {}
-        self._callbacks: List[Callable] = []
+        self._pending_requests: dict[str, ApprovalRequest] = {}
+        self._responses: dict[str, ApprovalResponse] = {}
+        self._response_events: dict[str, asyncio.Event] = {}
+        self._callbacks: list[Callable[[ApprovalResponse], None]] = []
 
-    def register_callback(self, callback: Callable) -> None:
+    def register_callback(self, callback: Callable[[ApprovalResponse], None]) -> None:
         """Registrar callback para notificaciones de aprobación."""
         self._callbacks.append(callback)
 
     async def request_approval(
         self,
         srs: SoftwareRequirementsSpec,
-        event_bus=None,
+        event_bus: Any | None = None,
     ) -> ApprovalRequest:
         """
         Crear solicitud de aprobación para un SRS.
@@ -89,28 +95,26 @@ class ApprovalGate:
         se puede auto-aprobar.
         """
         issues = []
-        if srs.ambiguity_score > 0.3:
-            issues.append(
-                f"Score de ambigüedad elevado: {ambiguous:.2f}"
-            )
+        ambiguity_score = getattr(srs, "ambiguity_score", 0.0)
+        if ambiguity_score > 0.3:
+            issues.append(f"Score de ambigüedad elevado: {ambiguity_score:.2f}")
 
         incomplete = [r for r in srs.requirements if not r.is_complete]
         if incomplete:
-            issues.append(
-                f"{len(incomplete)} requisitos incompletos"
-            )
+            issues.append(f"{len(incomplete)} requisitos incompletos")
 
         request = ApprovalRequest(
-            id=str(uuid.uuid4()),
+            request_id=str(uuid.uuid4()),
             srs_id=srs.id,
-            srs_version=srs.version,
+            srs_version=getattr(srs, "version", None)
+            or getattr(getattr(srs, "current_version", None), "version", None),
             summary=(
                 f"SRS '{srs.project_name}' v{srs.version} "
                 f"con {len(srs.requirements)} requisitos. "
-                f"Completeness: {srs.completeness_score:.1f}%"
+                f"Completeness: {getattr(srs, 'completeness_score', 0.0):.1f}%"
             ),
-            completeness_score=srs.completeness_score,
-            ambiguity_score=ambiguous,
+            completeness_score=getattr(srs, "completeness_score", 0.0),
+            ambiguity_score=ambiguity_score,
             total_requirements=len(srs.requirements),
             issues=issues,
             requested_by="requirements_agent",
@@ -144,7 +148,7 @@ class ApprovalGate:
             auto_response = ApprovalResponse(
                 request_id=request.id,
                 status=ApprovalStatus.APPROVED,
-                reviewer="auto_approval_system",
+                reviewed_by="auto_approval_system",
                 comments="Auto-aprobado por cumplir umbral de calidad",
             )
             await self.submit_response(auto_response)
@@ -154,7 +158,7 @@ class ApprovalGate:
     async def wait_for_response(
         self,
         request_id: str,
-        timeout: Optional[int] = None,
+        timeout: int | None = None,
     ) -> ApprovalResponse:
         """
         Esperar la respuesta del usuario.
@@ -168,18 +172,23 @@ class ApprovalGate:
 
         try:
             await asyncio.wait_for(event.wait(), timeout=timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(f"Timeout esperando aprobación: {request_id}")
             return ApprovalResponse(
                 request_id=request_id,
                 status=ApprovalStatus.TIMED_OUT,
-                reviewer="system",
+                reviewed_by="system",
                 comments=f"Timeout después de {timeout}s",
             )
 
         return self._responses.get(
             request_id,
-            ApprovalResponse(request_id=request_id),
+            ApprovalResponse(
+                request_id=request_id,
+                status=ApprovalStatus.TIMED_OUT,
+                reviewed_by="system",
+                comments="No response received before timeout",
+            ),
         )
 
     async def submit_response(self, response: ApprovalResponse) -> None:
@@ -203,21 +212,18 @@ class ApprovalGate:
                 logger.error(f"Error en callback de aprobación: {e}")
 
         logger.info(
-            f"Respuesta de aprobación recibida: {response.request_id} "
-            f"→ {response.status.value}"
+            f"Respuesta de aprobación recibida: {response.request_id} → {response.status.value}"
         )
 
-    def get_pending_requests(self) -> List[ApprovalRequest]:
+    def get_pending_requests(self) -> list[ApprovalRequest]:
         """Obtener solicitudes pendientes."""
-        return [
-            r for r in self._pending_requests.values()
-            if r.id not in self._responses
-        ]
+        return [r for r in self._pending_requests.values() if r.id not in self._responses]
 
 
 # ═══════════════════════════════════════════════
 #  DESIGN HANDOFF
 # ═══════════════════════════════════════════════
+
 
 class DesignHandoff:
     """Prepara el paquete de entrega al Design Agent."""
@@ -226,7 +232,7 @@ class DesignHandoff:
     def create_package(
         srs: SoftwareRequirementsSpec,
         approval: ApprovalResponse,
-        traceability: Optional[TraceabilityMatrix] = None,
+        traceability: TraceabilityMatrix | None = None,
     ) -> DesignHandoffPackage:
         """Crear paquete completo para el Design Agent."""
 
@@ -236,20 +242,20 @@ class DesignHandoff:
             for req in srs.requirements:
                 for uc in srs.use_cases:
                     if req.id in uc.related_requirements:
-                        traceability.add(TraceabilityEntry(
-                            source_id=req.id,
-                            target_id=uc.id,
-                            link_type="derives_from",
-                            rationale=f"Caso de uso derivado de requisito",
-                        ))
+                        traceability.add_entry(
+                            TraceabilityEntry(
+                                source_id=req.id,
+                                target_id=uc.id,
+                                link_type="derives_from",
+                                rationale="Caso de uso derivado de requisito",
+                            )
+                        )
 
         # Extraer constraints para diseño
         design_constraints = list(srs.constraints)
         for req in srs.requirements:
             if req.req_type.value in ("constraint", "performance", "security"):
-                design_constraints.append(
-                    f"[{req.id}] {req.title}: {req.description[:100]}"
-                )
+                design_constraints.append(f"[{req.id}] {req.title}: {req.description[:100]}")
 
         # Orden de prioridad
         sorted_reqs = sorted(
@@ -277,7 +283,13 @@ class DesignHandoff:
             suggested_patterns.append("Monolithic with Clean Architecture")
 
         package = DesignHandoffPackage(
-            srs=srs,
+            id=str(uuid.uuid4()),
+            srs_id=srs.id,
+            version=getattr(
+                srs, "version", getattr(getattr(srs, "current_version", None), "version", "1.0.0")
+            ),
+            requirements=srs.requirements,
+            use_cases=srs.use_cases,
             traceability_matrix=traceability,
             approval_response=approval,
             design_guidelines=[
@@ -302,6 +314,7 @@ class DesignHandoff:
 #  WORKFLOW PRINCIPAL
 # ═══════════════════════════════════════════════
 
+
 class RequirementsWorkflow:
     """
     Orquestador del pipeline completo de requisitos.
@@ -313,21 +326,21 @@ class RequirementsWorkflow:
 
     def __init__(
         self,
-        llm_engine=None,
-        memory=None,
-        decision_engine=None,
-        event_bus=None,
-    ):
-        self._llm_engine = llm_engine
-        self._memory = memory
-        self._decision_engine = decision_engine
-        self._event_bus = event_bus
+        llm_engine: RequirementsLLMEngine | None = None,
+        memory: Any | None = None,
+        decision_engine: Any | None = None,
+        event_bus: Any | None = None,
+    ) -> None:
+        self._llm_engine: RequirementsLLMEngine | None = llm_engine
+        self._memory: Any | None = memory
+        self._decision_engine: Any | None = decision_engine
+        self._event_bus: Any | None = event_bus
         self._approval_gate = ApprovalGate()
         self._design_handoff = DesignHandoff()
 
         self._current_stage: WorkflowStage = WorkflowStage.GATHER
         self._status: WorkflowStatus = WorkflowStatus.NOT_STARTED
-        self._pipeline_data: Dict[str, Any] = {}
+        self._pipeline_data: dict[str, Any] = {}
 
     @property
     def current_stage(self) -> WorkflowStage:
@@ -347,7 +360,7 @@ class RequirementsWorkflow:
         self,
         project_description: str,
         project_name: str = "Nuevo Proyecto",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Ejecutar el pipeline completo de requisitos.
 
@@ -393,16 +406,15 @@ class RequirementsWorkflow:
             await self._emit_event("requirements.stage.prioritize.started", {})
             requirements = await self._stage_prioritize(requirements)
             await self._emit_event(
-                "requirements.stage.prioritize.completed", {},
+                "requirements.stage.prioritize.completed",
+                {},
             )
 
             # ── STAGE 5: Generate SRS ──
             self._current_stage = WorkflowStage.GENERATE_SRS
             await self._emit_event("requirements.stage.srs.started", {})
             use_cases = await self._stage_generate_use_cases(requirements)
-            srs = await self._stage_generate_srs(
-                project_name, requirements, use_cases, extracted
-            )
+            srs = await self._stage_generate_srs(project_name, requirements, use_cases, extracted)
             await self._emit_event(
                 "requirements.stage.srs.completed",
                 {"srs_id": srs.id, "version": srs.version},
@@ -412,17 +424,13 @@ class RequirementsWorkflow:
             self._current_stage = WorkflowStage.APPROVAL_GATE
             self._status = WorkflowStatus.WAITING_APPROVAL
             await self._emit_event("requirements.stage.approval.started", {})
-            approval_request = await self._approval_gate.request_approval(
-                srs, self._event_bus
-            )
-            approval_response = await self._approval_gate.wait_for_response(
-                approval_request.id
-            )
+            approval_request = await self._approval_gate.request_approval(srs, self._event_bus)
+            approval_response = await self._approval_gate.wait_for_response(approval_request.id)
 
             if approval_response.status == ApprovalStatus.APPROVED:
                 self._status = WorkflowStatus.APPROVED
                 srs.approval_status = ApprovalStatus.APPROVED
-                srs.approved_by = approval_response.reviewer
+                srs.approved_by = approval_response.reviewed_by
                 srs.approved_at = approval_response.responded_at
             elif approval_response.status == ApprovalStatus.CHANGES_REQUESTED:
                 self._status = WorkflowStatus.REJECTED
@@ -454,9 +462,7 @@ class RequirementsWorkflow:
             # ── STAGE 7: Handoff to Design ──
             self._current_stage = WorkflowStage.HANDOFF_TO_DESIGN
             await self._emit_event("requirements.stage.handoff.started", {})
-            handoff_package = self._design_handoff.create_package(
-                srs, approval_response
-            )
+            handoff_package = self._design_handoff.create_package(srs, approval_response)
 
             # Almacenar en memoria
             if self._memory:
@@ -502,15 +508,11 @@ class RequirementsWorkflow:
 
     # ── Stage implementations ────────────────────
 
-    async def _stage_gather(
-        self, project_description: str
-    ) -> Dict[str, Any]:
+    async def _stage_gather(self, project_description: str) -> dict[str, Any]:
         """Stage 1: Recopilar requisitos."""
         logger.info("Stage GATHER: Extrayendo requisitos...")
         if self._llm_engine:
-            extracted = await self._llm_engine.extract_requirements(
-                project_description
-            )
+            extracted = await self._llm_engine.extract_requirements(project_description)
         else:
             extracted = {"requirements": [], "glossary": {}, "constraints": []}
 
@@ -524,9 +526,7 @@ class RequirementsWorkflow:
         logger.info(f"Stage GATHER completado: {len(requirements)} requisitos")
         return extracted
 
-    async def _stage_analyze(
-        self, requirements: List[Requirement]
-    ) -> Dict[str, Any]:
+    async def _stage_analyze(self, requirements: list[Requirement]) -> dict[str, Any]:
         """Stage 2: Analizar coherencia y completitud."""
         logger.info("Stage ANALYZE: Analizando requisitos...")
         issues = []
@@ -536,51 +536,50 @@ class RequirementsWorkflow:
             if not req.title:
                 issues.append({"req_id": req.id, "issue": "Sin título"})
             if len(req.acceptance_criteria) < 2:
-                issues.append({
-                    "req_id": req.id,
-                    "issue": "Menos de 2 criterios de aceptación",
-                })
+                issues.append(
+                    {
+                        "req_id": req.id,
+                        "issue": "Menos de 2 criterios de aceptación",
+                    }
+                )
 
         # Verificar dependencias circulares
         dep_graph = {r.id: set(r.dependencies) for r in requirements}
         for req_id, deps in dep_graph.items():
             if req_id in deps:
-                issues.append({
-                    "req_id": req_id,
-                    "issue": "Dependencia circular",
-                    "severity": "critical",
-                })
+                issues.append(
+                    {
+                        "req_id": req_id,
+                        "issue": "Dependencia circular",
+                        "severity": "critical",
+                    }
+                )
 
         # Verificar balance de prioridades
         priorities = [r.priority.value for r in requirements]
         must_ratio = priorities.count("must") / len(priorities) if priorities else 0
         if must_ratio > 0.6:
             suggestions.append(
-                "Más del 60% de requisitos son MUST. "
-                "Considere redistribuir prioridades."
+                "Más del 60% de requisitos son MUST. Considere redistribuir prioridades."
             )
 
         logger.info(
-            f"Stage ANALYZE completado: {len(issues)} issues, "
-            f"{len(suggestions)} sugerencias"
+            f"Stage ANALYZE completado: {len(issues)} issues, {len(suggestions)} sugerencias"
         )
         return {"issues": issues, "suggestions": suggestions}
 
-    async def _stage_detect_ambiguity(
-        self, requirements: List[Requirement]
-    ) -> List[Requirement]:
+    async def _stage_detect_ambiguity(self, requirements: list[Requirement]) -> list[Requirement]:
         """Stage 3: Detectar ambigüedades."""
         logger.info("Stage DETECT_AMBIGUITY: Analizando ambigüedades...")
         for req in requirements:
             if self._llm_engine:
                 report = await self._llm_engine.detect_ambiguity(req)
-                req.ambiguity = report
+                req.ambiguity_report = report
+                req.ambiguity_score = report.score
             req.status = RequirementStatus.ANALYZED
         return requirements
 
-    async def _stage_prioritize(
-        self, requirements: List[Requirement]
-    ) -> List[Requirement]:
+    async def _stage_prioritize(self, requirements: list[Requirement]) -> list[Requirement]:
         """Stage 4: Priorizar con DecisionEngine."""
         logger.info("Stage PRIORITIZE: Priorizando requisitos...")
 
@@ -589,6 +588,7 @@ class RequirementsWorkflow:
                 DecisionOption,
                 DecisionType,
             )
+
             options = [
                 DecisionOption(
                     id=req.id,
@@ -596,13 +596,13 @@ class RequirementsWorkflow:
                     pros=[f"Tipo: {req.req_type.value}"],
                     cons=[],
                     score=req.priority_score,
-                    risk_level=req.ambiguity.score if hasattr(req, 'ambiguity') else 0.0,
+                    risk_level=getattr(req, "ambiguity_score", 0.0),
                 )
                 for req in requirements
             ]
 
             if options:
-                decision = await self._decision_engine.evaluate_options(
+                await self._decision_engine.evaluate_options(
                     DecisionType.TASK_SELECTION,
                     context={"goal": "prioritize_requirements"},
                     options=options,
@@ -623,14 +623,12 @@ class RequirementsWorkflow:
             }
             for req in requirements:
                 base = priority_scores.get(req.priority, 0.5)
-                ambiguity_penalty = req.ambiguity.score * 0.2 if hasattr(req, 'ambiguity') else 0
+                ambiguity_penalty = getattr(req, "ambiguity_score", 0.0) * 0.2
                 req.priority_score = max(0.0, base - ambiguity_penalty)
 
         return sorted(requirements, key=lambda r: r.priority_score, reverse=True)
 
-    async def _stage_generate_use_cases(
-        self, requirements: List[Requirement]
-    ) -> List[UseCase]:
+    async def _stage_generate_use_cases(self, requirements: list[Requirement]) -> list[UseCase]:
         """Generar casos de uso."""
         if self._llm_engine:
             return await self._llm_engine.generate_use_cases(requirements)
@@ -639,40 +637,53 @@ class RequirementsWorkflow:
     async def _stage_generate_srs(
         self,
         project_name: str,
-        requirements: List[Requirement],
-        use_cases: List[UseCase],
-        extracted: Dict[str, Any],
+        requirements: list[Requirement],
+        use_cases: list[UseCase],
+        extracted: dict[str, Any],
     ) -> SoftwareRequirementsSpec:
         """Stage 5: Generar SRS versionado."""
         logger.info("Stage GENERATE_SRS: Generando SRS...")
 
         srs = SoftwareRequirementsSpec(
+            id=f"SRS-{uuid.uuid4().hex[:8].upper()}",
             project_name=project_name,
             description=f"SRS generado automáticamente para {project_name}",
+            version="1.0.0",
+            current_version=SRSVersion(version="1.0.0", created_by="requirements_agent"),
             requirements=requirements,
             use_cases=use_cases,
             glossary=extracted.get("glossary", {}),
             assumptions=extracted.get("assumptions", []),
             constraints=extracted.get("constraints", []),
+            completeness_score=100.0 - sum(1 for r in requirements if not r.is_complete) * 10.0,
+            ambiguity_score=(
+                sum(getattr(r, "ambiguity_score", 0.0) for r in requirements) / len(requirements)
+                if requirements
+                else 0.0
+            ),
         )
 
         # Crear snapshot inicial
-        srs.version_history.append({
-            "version": srs.version,
-            "created_at": datetime.now().isoformat(),
-            "summary": "Versión inicial generada automáticamente",
-            "requirement_ids": [r.id for r in requirements],
-        })
+        srs.version_history.append(
+            {
+                "version": srs.version,
+                "created_at": datetime.now().isoformat(),
+                "summary": "Versión inicial generada automáticamente",
+                "requirement_ids": [r.id for r in requirements],
+            }
+        )
 
         # Construir trazabilidad
         for req in requirements:
             for uc in use_cases:
                 if req.id in uc.related_requirements:
-                    srs.traceability.append(TraceabilityEntry(
-                        source_id=req.id,
-                        target_id=uc.id,
-                        link_type="derives_from",
-                    ))
+                    srs.traceability.append(
+                        TraceabilityEntry(
+                            source_id=req.id,
+                            target_id=uc.id,
+                            link_type="derives_from",
+                        )
+                    )
 
         logger.info(
             f"SRS generado: {srs.id} v{srs.version} "
@@ -682,7 +693,7 @@ class RequirementsWorkflow:
 
     # ── Event emission ───────────────────────────
 
-    async def _emit_event(self, event_type: str, data: Dict[str, Any]) -> None:
+    async def _emit_event(self, event_type: str, data: dict[str, Any]) -> None:
         """Emitir evento al bus."""
         if self._event_bus:
             try:

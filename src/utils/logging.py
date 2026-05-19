@@ -2,20 +2,18 @@
 
 import logging
 import sys
-from typing import Optional
+from typing import Any, cast
 
 import structlog
 
 
 def setup_logging(
-    level: str = "INFO",
-    log_file: Optional[str] = None,
-    format_type: str = "json"
+    level: str = "INFO", log_file: str | None = None, format_type: str = "json"
 ) -> None:
     """Configurar logging estructurado."""
-    
+
     # Configurar structlog
-    processors = [
+    processors: list[Any] = [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_log_level,
         structlog.stdlib.add_logger_name,
@@ -23,12 +21,12 @@ def setup_logging(
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,
     ]
-    
+
     if format_type == "json":
         processors.append(structlog.processors.JSONRenderer())
     else:
         processors.append(structlog.dev.ConsoleRenderer())
-    
+
     structlog.configure(
         processors=processors,
         wrapper_class=structlog.stdlib.BoundLogger,
@@ -36,21 +34,17 @@ def setup_logging(
         logger_factory=structlog.stdlib.LoggerFactory(),
         cache_logger_on_first_use=True,
     )
-    
+
     # Configurar logging estándar
     log_level = getattr(logging, level.upper(), logging.INFO)
-    
-    handlers = [logging.StreamHandler(sys.stdout)]
-    
+
+    handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
+
     if log_file:
         handlers.append(logging.FileHandler(log_file))
-    
-    logging.basicConfig(
-        level=log_level,
-        format="%(message)s",
-        handlers=handlers
-    )
-    
+
+    logging.basicConfig(level=log_level, format="%(message)s", handlers=handlers)
+
     # Reducir ruido de librerías
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("asyncio").setLevel(logging.WARNING)
@@ -58,4 +52,4 @@ def setup_logging(
 
 def get_logger(name: str) -> logging.Logger:
     """Obtener un logger configurado."""
-    return structlog.get_logger(name)
+    return cast(logging.Logger, structlog.get_logger(name))

@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any
 
 
 def generate_id() -> str:
@@ -10,7 +10,7 @@ def generate_id() -> str:
     return str(uuid.uuid4())
 
 
-def format_timestamp(dt: Optional[datetime] = None) -> str:
+def format_timestamp(dt: datetime | None = None) -> str:
     """Formatear timestamp ISO."""
     if dt is None:
         dt = datetime.now()
@@ -22,11 +22,11 @@ def parse_timestamp(ts: str) -> datetime:
     return datetime.fromisoformat(ts)
 
 
-def sanitize_dict(data: Dict[str, Any]) -> Dict[str, Any]:
+def sanitize_dict(data: dict[str, Any]) -> dict[str, Any]:
     """Sanitizar diccionario removiendo valores sensibles."""
     sensitive_keys = ["password", "secret", "api_key", "token", "credential"]
-    
-    result = {}
+
+    result: dict[str, Any] = {}
     for key, value in data.items():
         if any(s in key.lower() for s in sensitive_keys):
             result[key] = "***"
@@ -34,25 +34,24 @@ def sanitize_dict(data: Dict[str, Any]) -> Dict[str, Any]:
             result[key] = sanitize_dict(value)
         elif isinstance(value, list):
             result[key] = [
-                sanitize_dict(item) if isinstance(item, dict) else item
-                for item in value
+                sanitize_dict(item) if isinstance(item, dict) else item for item in value
             ]
         else:
             result[key] = value
-    
+
     return result
 
 
-def merge_dicts(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+def merge_dicts(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     """Mergear diccionarios recursivamente."""
-    result = base.copy()
-    
+    result: dict[str, Any] = base.copy()
+
     for key, value in override.items():
         if key in result and isinstance(result[key], dict) and isinstance(value, dict):
             result[key] = merge_dicts(result[key], value)
         else:
             result[key] = value
-    
+
     return result
 
 
@@ -60,12 +59,12 @@ def truncate_string(s: str, max_length: int = 100) -> str:
     """Truncar string a longitud máxima."""
     if len(s) <= max_length:
         return s
-    return s[:max_length - 3] + "..."
+    return s[: max_length - 3] + "..."
 
 
-def safe_get(dictionary: Dict[str, Any], *keys: str, default: Any = None) -> Any:
+def safe_get(dictionary: dict[str, Any], *keys: str, default: Any = None) -> Any:
     """Obtener valor anidado de forma segura."""
-    result = dictionary
+    result: Any = dictionary
     for key in keys:
         if isinstance(result, dict):
             result = result.get(key)

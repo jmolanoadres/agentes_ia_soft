@@ -1,8 +1,13 @@
 import asyncio
-from src.agents.requirements import RequirementsAgentV2
-from src.agents.base.base_agent import Task
+import logging
 
-async def main():
+from src.agents.base.base_agent import Task
+from src.agents.requirements import RequirementsAgentV2
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
+async def main() -> None:
     agent = RequirementsAgentV2()
     await agent.initialize()
 
@@ -24,6 +29,6 @@ async def main():
     )
 
     result = await agent.execute(task)
-    print(result.output_data)
+    logger.info(result.output_data)
 
 asyncio.run(main())

@@ -1,15 +1,16 @@
 """Agent protocol for inter-agent communication."""
 
+import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
-import uuid
+from typing import Any
 
 
 class MessageType(Enum):
     """Tipos de mensaje entre agentes."""
+
     TASK = "task"
     RESULT = "result"
     QUERY = "query"
@@ -22,6 +23,7 @@ class MessageType(Enum):
 
 class Priority(Enum):
     """Prioridad de mensajes."""
+
     LOW = 1
     NORMAL = 5
     HIGH = 10
@@ -31,18 +33,19 @@ class Priority(Enum):
 @dataclass
 class AgentMessage:
     """Mensaje entre agentes."""
+
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     sender: str = ""
     receiver: str = ""
     message_type: MessageType = MessageType.TASK
     priority: Priority = Priority.NORMAL
-    payload: Dict[str, Any] = field(default_factory=dict)
-    correlation_id: Optional[str] = None
+    payload: dict[str, Any] = field(default_factory=dict)
+    correlation_id: str | None = None
     timestamp: datetime = field(default_factory=datetime.now)
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    expires_at: Optional[datetime] = None
-    
-    def to_dict(self) -> Dict[str, Any]:
+    metadata: dict[str, Any] = field(default_factory=dict)
+    expires_at: datetime | None = None
+
+    def to_dict(self) -> dict[str, Any]:
         """Convertir a diccionario."""
         return {
             "id": self.id,
@@ -56,9 +59,9 @@ class AgentMessage:
             "metadata": self.metadata,
             "expires_at": self.expires_at.isoformat() if self.expires_at else None,
         }
-    
+
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "AgentMessage":
+    def from_dict(cls, data: dict[str, Any]) -> "AgentMessage":
         """Crear desde diccionario."""
         return cls(
             id=data.get("id", str(uuid.uuid4())),
@@ -68,20 +71,24 @@ class AgentMessage:
             priority=Priority(data.get("priority", 5)),
             payload=data.get("payload", {}),
             correlation_id=data.get("correlation_id"),
-            timestamp=datetime.fromisoformat(data["timestamp"]) if data.get("timestamp") else datetime.now(),
+            timestamp=datetime.fromisoformat(data["timestamp"])
+            if data.get("timestamp")
+            else datetime.now(),
             metadata=data.get("metadata", {}),
-            expires_at=datetime.fromisoformat(data["expires_at"]) if data.get("expires_at") else None,
+            expires_at=datetime.fromisoformat(data["expires_at"])
+            if data.get("expires_at")
+            else None,
         )
 
 
 class MessageHandler(ABC):
     """Manejador de mensajes."""
-    
+
     @abstractmethod
-    async def handle_message(self, message: AgentMessage) -> Optional[AgentMessage]:
+    async def handle_message(self, message: AgentMessage) -> AgentMessage | None:
         """Procesar un mensaje."""
         pass
-    
+
     @abstractmethod
     async def can_handle(self, message: AgentMessage) -> bool:
         """Determinar si puede manejar el mensaje."""
@@ -90,49 +97,48 @@ class MessageHandler(ABC):
 
 class Protocol:
     """Protocolo de comunicación entre agentes."""
-    
-    def __init__(self):
-        self._handlers: Dict[MessageType, List[MessageHandler]] = {}
-        self._message_queue: List[AgentMessage] = []
+
+    def __init__(self) -> None:
+        self._handlers: dict[MessageType, list[MessageHandler]] = {}
+        self._message_queue: list[AgentMessage] = []
         self._processing = False
-    
+
     def register_handler(self, message_type: MessageType, handler: MessageHandler) -> None:
         """Registrar un manejador para un tipo de mensaje."""
         if message_type not in self._handlers:
             self._handlers[message_type] = []
         self._handlers[message_type].append(handler)
-    
+
     async def send_message(self, message: AgentMessage) -> None:
         """Enviar un mensaje."""
         self._message_queue.append(message)
-    
-    async def receive_message(self) -> Optional[AgentMessage]:
+
+    async def receive_message(self) -> AgentMessage | None:
         """Recibir el siguiente mensaje."""
         if self._message_queue:
             return self._message_queue.pop(0)
         return None
-    
-    async def process_message(self, message: AgentMessage) -> Optional[AgentMessage]:
+
+    async def process_message(self, message: AgentMessage) -> AgentMessage | None:
         """Procesar un mensaje con los handlers registrados."""
         handlers = self._handlers.get(message.message_type, [])
-        
+
         for handler in handlers:
             if await handler.can_handle(message):
                 return await handler.handle_message(message)
-        
+
         return None
-    
-    def get_pending_messages(self, receiver: str) -> List[AgentMessage]:
+
+    def get_pending_messages(self, receiver: str) -> list[AgentMessage]:
         """Obtener mensajes pendientes para un receptor."""
         return [m for m in self._message_queue if m.receiver == receiver]
-    
+
     def clear_expired_messages(self) -> int:
         """Limpiar mensajes expirados."""
         now = datetime.now()
         initial_count = len(self._message_queue)
         self._message_queue = [
-            m for m in self._message_queue
-            if m.expires_at is None or m.expires_at > now
+            m for m in self._message_queue if m.expires_at is None or m.expires_at > now
         ]
         return initial_count - len(self._message_queue)
 

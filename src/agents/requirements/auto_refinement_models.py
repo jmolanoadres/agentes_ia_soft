@@ -1,4 +1,3 @@
-
 """auto_refinement_models.py
 
 Modelos del sistema de Auto-Refinamiento (SDLAS).
@@ -17,7 +16,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 @dataclass
@@ -43,8 +42,8 @@ class SkillRecord:
     avg_execution_time: float = 0.0
     total_execution_time: float = 0.0
     last_feedback_score: float = 0.0
-    improvement_notes: List[str] = field(default_factory=list)
-    last_executed: Optional[datetime] = None
+    improvement_notes: list[str] = field(default_factory=list)
+    last_executed: datetime | None = None
 
     @property
     def success_rate(self) -> float:
@@ -54,7 +53,7 @@ class SkillRecord:
     def failure_rate(self) -> float:
         return (self.failures / self.executions) if self.executions else 0.0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "skill_name": self.skill_name,
             "executions": self.executions,
@@ -68,7 +67,7 @@ class SkillRecord:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "SkillRecord":
+    def from_dict(cls, data: dict[str, Any]) -> SkillRecord:
         obj = cls(skill_name=data.get("skill_name", "unknown"))
         obj.executions = int(data.get("executions", 0))
         obj.successes = int(data.get("successes", 0))
@@ -106,7 +105,7 @@ class RefinementAction:
     impact_score: float = 0.0
     created_at: datetime = field(default_factory=datetime.now)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "skill_name": self.skill_name,
@@ -118,7 +117,7 @@ class RefinementAction:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "RefinementAction":
+    def from_dict(cls, data: dict[str, Any]) -> RefinementAction:
         created_at = data.get("created_at")
         dt = None
         if created_at:
