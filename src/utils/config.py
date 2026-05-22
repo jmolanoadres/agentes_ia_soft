@@ -2,6 +2,8 @@
 
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+import getpass
+import os
 
 
 class Settings(BaseSettings):
@@ -9,15 +11,16 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
+
     # Configuración de la aplicación
     app_name: str = "SDLAS"
     app_version: str = "0.1.0"
     debug: bool = False
 
     # Configuración de LLM
-    llm_provider: str = "openai"
-    llm_model: str = "gpt-4"
-    llm_api_key: str | None = None
+    llm_provider: str = "Gemini"
+    llm_model: str = "gemini-3.5-flash"
+    llm_api_key: str = "AIzaSyA-uoxxOcavw7zbMBVMBtXXa_T51v_orG0"
     llm_temperature: float = 0.7
     llm_max_tokens: int = 2000
 

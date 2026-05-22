@@ -19,8 +19,8 @@ class RequirementsConfig(BaseSettings):
     )
 
     # ── LLM ──────────────────────────────────────
-    llm_provider: str = Field(default="openai", description="Proveedor LLM")
-    llm_model: str = Field(default="gpt-4o", description="Modelo LLM")
+    llm_provider: str = Field(default="Gemini", description="Proveedor LLM")
+    llm_model: str = Field(default="gemini-3.5-flash", description="Modelo LLM")
     temperature: float = Field(default=0.3, ge=0.0, le=2.0)
     max_tokens: int = Field(default=4096, ge=256)
 
@@ -28,6 +28,7 @@ class RequirementsConfig(BaseSettings):
     embedding_model: str = Field(default="text-embedding-3-small")
     vector_db_path: str = Field(default="./data/requirements_vectordb")
     similarity_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
+    llm_api_key: str = "AIzaSyA-uoxxOcavw7zbMBVMBtXXa_T51v_orG0"
 
     # ── Análisis de requisitos ───────────────────
     ambiguity_threshold: float = Field(

@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 try:
     from langchain_core.output_parsers import JsonOutputParser
     from langchain_core.prompts import ChatPromptTemplate
-    from langchain_openai import ChatOpenAI
+    from langchain_google_genai import ChatGoogleGenerativeAI
 
     LANGCHAIN_AVAILABLE = True
 except ImportError:
@@ -177,10 +177,11 @@ class RequirementsLLMEngine:
 
         if LANGCHAIN_AVAILABLE and self._config.enable_llm:
             try:
-                self._llm = ChatOpenAI(
+                self._llm = ChatGoogleGenerativeAI(
                     model=self._config.llm_model,
                     temperature=self._config.temperature,
                     max_tokens=self._config.max_tokens,
+                    google_api_key=self._config.llm_api_key
                 )
                 self._parser = JsonOutputParser()
                 logger.info(

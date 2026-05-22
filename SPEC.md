@@ -347,7 +347,7 @@ agent_registry = {
 | Requisitos | Requisitos ambiguos detectados, Completitud SRS |
 | Diseño | Violaciones de arquitectura, Complejidad ciclomática |
 | Código | Cobertura de tests, Debt técnico introducido |
-| Pruebas |覆盖率, Defectos encontrados/test |
+| Pruebas |, Defectos encontrados/test |
 | Despliegue | Tiempo de despliegue, Tasa de rollback |
 | Mantenimiento | Uptime, MTBF, MTTR |
 

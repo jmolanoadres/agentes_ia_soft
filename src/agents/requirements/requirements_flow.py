@@ -83,11 +83,8 @@ class ApprovalGate:
         """Registrar callback para notificaciones de aprobación."""
         self._callbacks.append(callback)
 
-    async def request_approval(
-        self,
-        srs: SoftwareRequirementsSpec,
-        event_bus: Any | None = None,
-    ) -> ApprovalRequest:
+    async def request_approval(self, srs: SoftwareRequirementsSpec,
+                               event_bus: Any | None = None,) -> ApprovalRequest:
         """
         Crear solicitud de aprobación para un SRS.
 
@@ -126,13 +123,11 @@ class ApprovalGate:
 
         # Emitir evento
         if event_bus:
-            await event_bus.publish(
-                event_bus.create_event(
-                    event_type="requirements.approval_requested",
-                    source="requirements_agent",
-                    data=request.to_dict(),
-                )
-            )
+            await event_bus.publish(event_bus.create_event(event_type="requirements.approval_requested",
+                                                           source="requirements_agent",
+                                                           data=request.to_dict(),
+                                                           )
+                                    )
 
         logger.info(
             f"Solicitud de aprobación creada: {request.id} "
@@ -145,21 +140,15 @@ class ApprovalGate:
                 f"Auto-aprobación activada (score {srs.completeness_score:.1f}% "
                 f">= {self._auto_threshold}%)"
             )
-            auto_response = ApprovalResponse(
-                request_id=request.id,
-                status=ApprovalStatus.APPROVED,
-                reviewed_by="auto_approval_system",
-                comments="Auto-aprobado por cumplir umbral de calidad",
-            )
+            auto_response = ApprovalResponse(request_id=request.id, status=ApprovalStatus.APPROVED,
+                                             reviewed_by="auto_approval_system",
+                                             comments="Auto-aprobado por cumplir umbral de calidad",
+                                             )
             await self.submit_response(auto_response)
 
         return request
 
-    async def wait_for_response(
-        self,
-        request_id: str,
-        timeout: int | None = None,
-    ) -> ApprovalResponse:
+    async def wait_for_response(self, request_id: str, timeout: int | None = None, ) -> ApprovalResponse:
         """
         Esperar la respuesta del usuario.
 
@@ -229,11 +218,9 @@ class DesignHandoff:
     """Prepara el paquete de entrega al Design Agent."""
 
     @staticmethod
-    def create_package(
-        srs: SoftwareRequirementsSpec,
-        approval: ApprovalResponse,
-        traceability: TraceabilityMatrix | None = None,
-    ) -> DesignHandoffPackage:
+    def create_package(srs: SoftwareRequirementsSpec, approval: ApprovalResponse,
+                       traceability: TraceabilityMatrix | None = None,
+                       ) -> DesignHandoffPackage:
         """Crear paquete completo para el Design Agent."""
 
         # Construir trazabilidad si no existe
@@ -258,11 +245,7 @@ class DesignHandoff:
                 design_constraints.append(f"[{req.id}] {req.title}: {req.description[:100]}")
 
         # Orden de prioridad
-        sorted_reqs = sorted(
-            srs.requirements,
-            key=lambda r: r.priority_score,
-            reverse=True,
-        )
+        sorted_reqs = sorted(srs.requirements, key=lambda r: r.priority_score, reverse=True,)
         priority_order = [r.id for r in sorted_reqs]
 
         # Sugerencias de patrones
@@ -325,12 +308,12 @@ class RequirementsWorkflow:
     """
 
     def __init__(
-        self,
-        llm_engine: RequirementsLLMEngine | None = None,
-        memory: Any | None = None,
-        decision_engine: Any | None = None,
-        event_bus: Any | None = None,
-    ) -> None:
+                self,
+                llm_engine: RequirementsLLMEngine | None = None,
+                memory: Any | None = None,
+                decision_engine: Any | None = None,
+                event_bus: Any | None = None,
+            ) -> None:
         self._llm_engine: RequirementsLLMEngine | None = llm_engine
         self._memory: Any | None = memory
         self._decision_engine: Any | None = decision_engine
@@ -357,10 +340,10 @@ class RequirementsWorkflow:
     # ── Pipeline completo ────────────────────────
 
     async def run_full_pipeline(
-        self,
-        project_description: str,
-        project_name: str = "Nuevo Proyecto",
-    ) -> dict[str, Any]:
+                                self,
+                                project_description: str,
+                                project_name: str = "Nuevo Proyecto",
+                            ) -> dict[str, Any]:
         """
         Ejecutar el pipeline completo de requisitos.
 
