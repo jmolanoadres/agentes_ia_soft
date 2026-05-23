@@ -17,7 +17,6 @@ logger = logging.getLogger(__name__)
 # ── Intentar importar ChromaDB ──────────────────
 try:
     import chromadb
-    from chromadb.config import Settings as ChromaSettings
 
     CHROMADB_AVAILABLE = True
 except ImportError:
@@ -133,13 +132,8 @@ class RequirementsMemory:
         """Inicializar colección de vectores."""
         if CHROMADB_AVAILABLE:
             try:
-                client = chromadb.Client(
-                    ChromaSettings(
-                        chroma_db_impl="duckdb+parquet",
-                        persist_directory=self._persist_dir,
-                        anonymized_telemetry=False,
-                    )
-                )
+                # Nueva API de ChromaDB: usar PersistentClient para persistencia
+                client = chromadb.PersistentClient(path=self._persist_dir)
                 collection = client.get_or_create_collection(
                     name=self._collection_name,
                     metadata={"hnsw:space": "cosine"},

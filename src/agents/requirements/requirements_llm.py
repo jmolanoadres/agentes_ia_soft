@@ -276,84 +276,104 @@ class RequirementsLLMEngine:
     # ── LLM implementations ──────────────────────
 
     async def _llm_extract(self, description: str) -> dict[str, Any]:
-        prompt = ChatPromptTemplate.from_template(EXTRACT_REQUIREMENTS_PROMPT)
-        chain = prompt | self._llm | self._parser
-        result: Any = await chain.ainvoke({"project_description": description})
-        return dict(result)
+        try:
+            prompt = ChatPromptTemplate.from_template(EXTRACT_REQUIREMENTS_PROMPT)
+            chain = prompt | self._llm | self._parser
+            result: Any = await chain.ainvoke({"project_description": description})
+            return dict(result)
+        except Exception as e:
+            logger.warning(f"LLM extract failed: {e}. Falling back to heuristic.")
+            return self._fallback_extract(description)
 
     async def _llm_detect_ambiguity(self, req: Requirement) -> AmbiguityReport:
-        prompt = ChatPromptTemplate.from_template(DETECT_AMBIGUITY_PROMPT)
-        chain = prompt | self._llm | self._parser
-        result: Any = await chain.ainvoke(
-            {
-                "title": req.title,
-                "description": req.description,
-                "acceptance_criteria": "; ".join(req.acceptance_criteria),
-            }
-        )
-        return AmbiguityReport(
-            flags=[
-                AmbiguityFlag(str(f))
-                for f in result.get("flags", [])
-                if str(f) in [e.value for e in AmbiguityFlag]
-            ],
-            details=list(result.get("details", [])),
-            score=float(result.get("score", 0.0)),
-            suggestions=list(result.get("suggestions", [])),
-        )
+        try:
+            prompt = ChatPromptTemplate.from_template(DETECT_AMBIGUITY_PROMPT)
+            chain = prompt | self._llm | self._parser
+            result: Any = await chain.ainvoke(
+                {
+                    "title": req.title,
+                    "description": req.description,
+                    "acceptance_criteria": "; ".join(req.acceptance_criteria),
+                }
+            )
+            return AmbiguityReport(
+                flags=[
+                    AmbiguityFlag(str(f))
+                    for f in result.get("flags", [])
+                    if str(f) in [e.value for e in AmbiguityFlag]
+                ],
+                details=list(result.get("details", [])),
+                score=float(result.get("score", 0.0)),
+                suggestions=list(result.get("suggestions", [])),
+            )
+        except Exception as e:
+            logger.warning(f"LLM detect_ambiguity failed: {e}. Falling back to heuristic.")
+            return self._fallback_detect_ambiguity(req)
 
     async def _llm_generate_criteria(self, req: Requirement) -> list[str]:
-        prompt = ChatPromptTemplate.from_template(GENERATE_CRITERIA_PROMPT)
-        chain = prompt | self._llm | self._parser
-        result: Any = await chain.ainvoke(
-            {
-                "title": req.title,
-                "description": req.description,
-                "req_type": req.req_type.value,
-            }
-        )
-        return list(result.get("acceptance_criteria", []))
+        try:
+            prompt = ChatPromptTemplate.from_template(GENERATE_CRITERIA_PROMPT)
+            chain = prompt | self._llm | self._parser
+            result: Any = await chain.ainvoke(
+                {
+                    "title": req.title,
+                    "description": req.description,
+                    "req_type": req.req_type.value,
+                }
+            )
+            return list(result.get("acceptance_criteria", []))
+        except Exception as e:
+            logger.warning(f"LLM generate_criteria failed: {e}. Falling back to heuristic.")
+            return self._fallback_generate_criteria(req)
 
     async def _llm_generate_use_cases(self, requirements: list[Requirement]) -> list[UseCase]:
-        functional = [r for r in requirements if r.req_type == RequirementType.FUNCTIONAL]
-        if not functional:
-            return []
+        try:
+            functional = [r for r in requirements if r.req_type == RequirementType.FUNCTIONAL]
+            if not functional:
+                return []
 
-        req_text = "\n".join(f"- [{r.id}] {r.title}: {r.description}" for r in functional)
-        prompt = ChatPromptTemplate.from_template(GENERATE_USE_CASES_PROMPT)
-        chain = prompt | self._llm | self._parser
-        result: Any = await chain.ainvoke({"requirements_text": req_text})
+            req_text = "\n".join(f"- [{r.id}] {r.title}: {r.description}" for r in functional)
+            prompt = ChatPromptTemplate.from_template(GENERATE_USE_CASES_PROMPT)
+            chain = prompt | self._llm | self._parser
+            result: Any = await chain.ainvoke({"requirements_text": req_text})
 
-        use_cases = []
-        for uc_data in result.get("use_cases", []):
-            use_cases.append(
-                UseCase(
-                    id=str(uuid.uuid4()),
-                    name=uc_data.get("name", ""),
-                    actor=uc_data.get("actor", "Usuario"),
-                    description=uc_data.get("description", ""),
-                    preconditions=uc_data.get("preconditions", []),
-                    steps=uc_data.get("steps", []),
-                    postconditions=uc_data.get("postconditions", []),
-                    alternative_flows=uc_data.get("alternative_flows", []),
-                    exception_flows=uc_data.get("exception_flows", []),
-                    related_requirements=uc_data.get("related_requirements", []),
+            use_cases = []
+            for uc_data in result.get("use_cases", []):
+                use_cases.append(
+                    UseCase(
+                        id=str(uuid.uuid4()),
+                        name=uc_data.get("name", ""),
+                        actor=uc_data.get("actor", "Usuario"),
+                        description=uc_data.get("description", ""),
+                        preconditions=uc_data.get("preconditions", []),
+                        steps=uc_data.get("steps", []),
+                        postconditions=uc_data.get("postconditions", []),
+                        alternative_flows=uc_data.get("alternative_flows", []),
+                        exception_flows=uc_data.get("exception_flows", []),
+                        related_requirements=uc_data.get("related_requirements", []),
+                    )
                 )
-            )
-        return use_cases
+            return use_cases
+        except Exception as e:
+            logger.warning(f"LLM generate_use_cases failed: {e}. Falling back to heuristic.")
+            return self._fallback_generate_use_cases(requirements)
 
     async def _llm_estimate_complexity(self, req: Requirement) -> dict[str, Any]:
-        prompt = ChatPromptTemplate.from_template(ESTIMATE_COMPLEXITY_PROMPT)
-        chain = prompt | self._llm | self._parser
-        result: Any = await chain.ainvoke(
-            {
-                "title": req.title,
-                "description": req.description,
-                "req_type": req.req_type.value,
-                "dependencies": ", ".join(req.dependencies) or "Ninguna",
-            }
-        )
-        return dict(result)
+        try:
+            prompt = ChatPromptTemplate.from_template(ESTIMATE_COMPLEXITY_PROMPT)
+            chain = prompt | self._llm | self._parser
+            result: Any = await chain.ainvoke(
+                {
+                    "title": req.title,
+                    "description": req.description,
+                    "req_type": req.req_type.value,
+                    "dependencies": ", ".join(req.dependencies) or "Ninguna",
+                }
+            )
+            return dict(result)
+        except Exception as e:
+            logger.warning(f"LLM estimate_complexity failed: {e}. Falling back to heuristic.")
+            return self._fallback_estimate_complexity(req)
 
     # ── Fallback heurístico ──────────────────────
 

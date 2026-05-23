@@ -18,7 +18,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from auto_refinement_models import RefinementAction, SkillRecord
+from .auto_refinement_models import RefinementAction, SkillRecord
 
 logger = logging.getLogger(__name__)
 

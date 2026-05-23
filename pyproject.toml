@@ -20,6 +20,7 @@ dependencies = [
     "asyncio-mqtt>=0.16.0",
     "chromadb>=1.5.9",
     "langchain-google-genai>=4.2.3",
+    "python-dotenv>=1.0.0",
 ]
 
 [project.optional-dependencies]

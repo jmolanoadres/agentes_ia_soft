@@ -4,9 +4,15 @@ Variables de entorno con prefijo SDLAS_REQ_.
 """
 
 
+import os
+
+from dotenv import load_dotenv
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Cargar variables de entorno desde .env
+load_dotenv()
+api_key = os.environ.get("GOOGLE_API_KEY", "")
 
 class RequirementsConfig(BaseSettings):
     """Configuración centralizada del Requirements Agent."""
@@ -28,7 +34,7 @@ class RequirementsConfig(BaseSettings):
     embedding_model: str = Field(default="text-embedding-3-small")
     vector_db_path: str = Field(default="./data/requirements_vectordb")
     similarity_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
-    llm_api_key: str = "AIzaSyA-uoxxOcavw7zbMBVMBtXXa_T51v_orG0"
+    llm_api_key: str = Field(default=api_key)
 
     # ── Análisis de requisitos ───────────────────
     ambiguity_threshold: float = Field(

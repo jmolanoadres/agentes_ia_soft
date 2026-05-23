@@ -1,10 +1,14 @@
 """Configuration management."""
 
-
-from pydantic_settings import BaseSettings, SettingsConfigDict
-import getpass
 import os
 
+from dotenv import load_dotenv
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Cargar variables de entorno desde .env
+load_dotenv()
+
+api_key = os.environ.get("GOOGLE_API_KEY", "")
 
 class Settings(BaseSettings):
     """Configuración global del sistema."""
@@ -20,7 +24,7 @@ class Settings(BaseSettings):
     # Configuración de LLM
     llm_provider: str = "Gemini"
     llm_model: str = "gemini-3.5-flash"
-    llm_api_key: str = "AIzaSyA-uoxxOcavw7zbMBVMBtXXa_T51v_orG0"
+    llm_api_key: str = api_key
     llm_temperature: float = 0.7
     llm_max_tokens: int = 2000
 
